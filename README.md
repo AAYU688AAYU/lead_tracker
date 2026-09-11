@@ -60,9 +60,9 @@ graph TD
         S3["Global Agency Oversight Scope<br/>• Partner University Portfolio<br/>• Cross-Counselor Workload & Conversion Analytics<br/>• SLA & Stall Threshold Configurations<br/>• Communication Gateway Webhooks"]
     end
 
-    R1 -->|Scoped via RLS (auth.uid = student_id)| S1
-    R2 -->|Scoped via RLS (auth.uid = assigned_consultant_id)| S2
-    R3 -->|Unrestricted Management via is_super_admin()| S3
+    R1 -->|"Scoped via RLS (auth.uid = student_id)"| S1
+    R2 -->|"Scoped via RLS (auth.uid = assigned_consultant_id)"| S2
+    R3 -->|"Unrestricted Management via is_super_admin()"| S3
 ```
 
 ### Role 1: The Student (B2C Client)
@@ -296,18 +296,18 @@ flowchart TB
     STUDENT_APP -->|Direct S3 Upload with Signed URL| STORAGE_BUCKET
 
     %% Realtime
-    Postgres_Core -->|Replication Stream (WAL)| WS_BROADCASTER
+    Postgres_Core -->|"Replication Stream (WAL)"| WS_BROADCASTER
     WS_BROADCASTER -.->|Bi-directional WebSockets| CONSULTANT_CRM
     WS_BROADCASTER -.->|Bi-directional WebSockets| DEMO_SPLIT
 
     %% Webhook to Edge Function
-    DB_TRIGGER -->|Async HTTP POST (Signed)| EF_AUTORESPOND
+    DB_TRIGGER -->|"Async HTTP POST (Signed)"| EF_AUTORESPOND
     EF_AUTORESPOND -->|Send Email| RESEND
     EF_AUTORESPOND -->|Send WhatsApp| TWILIO
     EF_AUTORESPOND -->|Log Result with Service Key| T_COMM
 
     %% Cron
-    PG_CRON -->|Executes fn_detect_stalled_leads()| T_LEADS
+    PG_CRON -->|"Executes fn_detect_stalled_leads()"| T_LEADS
     PG_CRON -->|Creates Reminder Row| T_REM
 ```
 
