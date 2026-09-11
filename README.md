@@ -1,6 +1,6 @@
 # Student Admission Lead Automation System – Comprehensive System Design & Implementation Plan
 
-This document provides the complete, low-level technical architecture, system design, database schemas, REST API contracts, WebSocket protocols, background automation workflows, and UI component hierarchy for the **Student Admission Lead Automation System**, built with **Django REST Framework (DRF)**, **Django Channels (ASGI/Daphne)**, and **React (Vite)**.
+This document provides the complete, low-level technical architecture, system design, database schemas, REST API contracts, WebSocket protocols, background automation workflows, and UI component hierarchy for the **Student Admission Lead Automation System**, built with **Django REST Framework (DRF)**, **Django Channels (ASGI/Daphne)**, and **Next.js (App Router)**.
 
 ---
 
@@ -26,7 +26,7 @@ The platform automates the student inquiry-to-enrollment lifecycle across four d
 
 | Pillar | Focus | Technology Used | Output Deliverable |
 |---|---|---|---|
-| **Work 1: Real-Time Form to Dashboard** | Zero-latency lead ingestion | React Form → DRF `POST /api/leads/` → SQLite/PostgreSQL → Django Channels (Daphne ASGI) | Lead displays on counselor dashboard instantly without page reload. |
+| **Work 1: Real-Time Form to Dashboard** | Zero-latency lead ingestion | Next.js Client Form → DRF `POST /api/leads/` → SQLite/PostgreSQL → Django Channels (Daphne ASGI) | Lead displays on counselor dashboard instantly without page reload. |
 | **Work 2: Instant Auto-Response** | Immediate multi-channel student acknowledgement | Post-save signal/service → Modular Email & WhatsApp dispatcher → `CommunicationLog` | Student receives personalized acknowledgement within 3 seconds; counselors inspect delivery status. |
 | **Work 3: Admission Stage Tracking & Funnel CRM** | Lifecycle pipeline & conversion visibility | Django ORM → Stage Transition Engine → `ActivityLog` → Interactive Funnel & Kanban UI | Full visibility across 6 stages: *Inquiry → Counseling → Document Collection → Application → Fee/Verification → Admitted*. |
 | **Work 4: Stall Reminder Automation** | Inactivity monitoring & follow-up enforcement | APScheduler background worker → Inactivity threshold evaluator → `Reminder` generator → WebSocket alert | Flags inactive leads (e.g., >48h in Counseling), alerts counselor via audio/visual banner, prevents drop-offs. |
@@ -37,7 +37,7 @@ The platform automates the student inquiry-to-enrollment lifecycle across four d
 
 ```mermaid
 flowchart TB
-    subgraph Frontend_Layer ["Frontend Client Layer (React 18 + Vite + Tailwind CSS)"]
+    subgraph Frontend_Layer ["Frontend Client Layer (Next.js 14+ App Router + Tailwind CSS)"]
         SF["Student Inquiry Portal\n- Validates Email/Phone\n- Course Picker\n- Submission Feedback"]
         CRM["Counselor CRM Dashboard\n- Funnel Metrics & Conversion Rates\n- Live Kanban Pipeline\n- Leads Table & Filters\n- Stall Reminders Center"]
         SPLIT["Side-by-Side Presentation Mode\n- Student Form (Left)\n- Real-Time CRM (Right)"]
@@ -96,7 +96,7 @@ flowchart TB
 sequenceDiagram
     autonumber
     actor Student as Prospective Student
-    participant Form as React Student Form
+    participant Form as Next.js Student Form
     participant API as DRF /api/leads/
     participant DB as Django ORM (Database)
     participant Notif as Auto-Response Service
@@ -535,31 +535,40 @@ Counselors can view both messages in the CRM's **"Auto-Response Log"** drawer an
 
 ## 9. Frontend Architecture & Component Hierarchy
 
-Built using modern React 18 with Vite, Lucide Icons, and Tailwind CSS:
+Built using modern **Next.js (App Router)** with **React**, **Lucide Icons**, and **Tailwind CSS**:
+
+### 9.1 Next.js Application Architecture
+
+- **Rendering Paradigm**: Utilizes Next.js App Router with `"use client"` directives for interactive real-time client components (WebSocket listeners, audio alerts, form handlers, drag-and-drop Kanban) and Server Components / Layouts for optimized shell rendering, metadata, and fast initial page loads.
+- **State Management & Live Sync**: Custom React hooks (`useDashboardWebSocket`) maintain an active WebSocket link to Daphne ASGI (`ws://localhost:8000/ws/dashboard/`), receiving atomic updates (`LEAD_CREATED`, `STAGE_UPDATED`, `STALL_ALERT`, `LEAD_CONTACTED`) and updating local React state without page reloads.
+- **Styling & Design System**: Tailwind CSS with custom CSS variable tokens, glassmorphic card surfaces, admission funnel gradient charts, and animated pulsing status indicators.
+
+### 9.2 Component Tree & View Hierarchy
 
 ```
-App.jsx (Top Navigation, View Mode Switcher, Global WebSocket Listener)
-├── NavigationBar (Brand Logo, Live WebSocket Status Pill, View Tabs, Audio Toggle)
-├── DemoToolbar (Quick Seed, Simulate Stall, Run Stall Check Now)
-│
-├── [Tab 1] Student Portal View (StudentForm.jsx)
-│   ├── Hero Header with Campus Branding
-│   ├── Interactive Form Inputs (Name, Email, Phone, Course Dropdown, Notes)
-│   ├── Real-time Form Validation
-│   └── Instant Submission Success Card (Reference ID, Auto-response notice)
-│
-├── [Tab 2] Counselor Real-Time CRM View (Dashboard.jsx)
-│   ├── MetricCards (Total Leads, Active Counseling, Stalled Alerts, Conversion %)
-│   ├── AdmissionFunnel (Visual Stage Drop-off Chart with Interactive Filters)
-│   ├── PipelineKanban (6 Column Stage Board with Drag/Click Progression)
-│   ├── LeadsTable (Search, Stage Filter, Course Filter, Stall Filter, Sort)
-│   ├── StallAlertsBanner (Dismissable alert ticker with one-click follow-up)
-│   ├── LeadDetailDrawer (Activity Timeline, Contact Logger, Message Logs)
-│   └── AutoResponseViewerModal (Email HTML Preview & WhatsApp Chat Sandbox)
-│
-└── [Tab 3] Split Presentation Mode (SplitView.jsx)
-    ├── Left Half: Live Student Inquiry Form
-    └── Right Half: Real-Time Counselor CRM (Observes live updates without refresh)
+app/layout.jsx (Root Layout, Metadata, Theme Provider, Global Audio Context)
+└── app/page.jsx (Main Presentation Controller, Tab/View Switcher, Global WebSocket Listener)
+    ├── NavigationBar.jsx (Brand Logo, Live WebSocket Status Pill, View Mode Tabs, Audio Mute/Unmute)
+    ├── DemoToolbar.jsx (Quick Seed 10 Leads, Simulate Stall -3 Days, Trigger Stall Check Now)
+    │
+    ├── [Tab 1] Student Portal View (StudentForm.jsx)
+    │   ├── Hero Header with Campus Branding & Value Proposition
+    │   ├── Interactive Form Inputs (Name, Email, Phone, Course Dropdown, Notes)
+    │   ├── Client-Side Form Validation & Error Feedback
+    │   └── Instant Submission Success Card (Reference ID, Instant Auto-response dispatch notice)
+    │
+    ├── [Tab 2] Counselor Real-Time CRM View (Dashboard.jsx)
+    │   ├── MetricCards (Total Leads, Active Counseling, Stalled Alerts, Conversion %)
+    │   ├── AdmissionFunnel (Visual Stage Drop-off Chart with Interactive Filters)
+    │   ├── PipelineKanban (6 Column Stage Board with Stage Progression & Drag/Click Actions)
+    │   ├── LeadsTable (Search, Stage Filter, Course Filter, Stall Filter, Sorting)
+    │   ├── StallAlertsBanner (Dismissable alert ticker with one-click follow-up trigger)
+    │   ├── LeadDetailDrawer (Full Activity Timeline, Quick Call/Email Logger, Message Logs)
+    │   └── AutoResponseViewerModal (Email HTML Preview & WhatsApp Chat Sandbox)
+    │
+    └── [Tab 3] Split Presentation Mode (SplitView.jsx)
+        ├── Left Half: Live Student Inquiry Form (Simulates applicant interaction)
+        └── Right Half: Real-Time Counselor CRM (Observes instant zero-latency lead sync)
 ```
 
 ---
@@ -611,31 +620,37 @@ To satisfy **Section 13 ("Demo Scenario for Presentation")** of the project docu
 │       └── tests.py            # Comprehensive test cases for all 4 works
 │
 ├── frontend/
-│   ├── package.json
-│   ├── vite.config.js
-│   ├── index.html
-│   ├── src/
-│   │   ├── main.jsx
-│   │   ├── App.jsx
-│   │   ├── index.css
-│   │   ├── components/
-│   │   │   ├── Navbar.jsx
-│   │   │   ├── DemoToolbar.jsx
-│   │   │   ├── StudentForm.jsx
-│   │   │   ├── Dashboard.jsx
-│   │   │   ├── FunnelChart.jsx
-│   │   │   ├── PipelineKanban.jsx
-│   │   │   ├── LeadsTable.jsx
-│   │   │   ├── LeadDetailDrawer.jsx
-│   │   │   ├── StallAlertsBanner.jsx
-│   │   │   ├── AutoResponseViewer.jsx
-│   │   │   └── SplitView.jsx
-│   │   ├── hooks/
-│   │   │   └── useDashboardWebSocket.js
-│   │   └── services/
-│   │       └── api.js
+│   ├── package.json            # Next.js 14/15, React 18/19, Lucide React, Tailwind CSS
+│   ├── next.config.js          # Next.js configuration & DRF API rewrites
+│   ├── tailwind.config.js      # Tailwind CSS configuration
+│   ├── postcss.config.js       # PostCSS plugins
+│   ├── jsconfig.json           # Path aliases (@/* -> src/*)
+│   ├── public/                 # Static assets
+│   │   ├── chime.mp3           # Real-time lead audio alert chime
+│   │   └── favicon.ico
+│   └── src/
+│       ├── app/
+│       │   ├── layout.jsx      # Root HTML layout, font setup, navigation
+│       │   ├── page.jsx        # Presentation switcher (Form, CRM, Split view)
+│       │   └── globals.css     # Tailwind CSS base and theme styles
+│       ├── components/
+│       │   ├── Navbar.jsx
+│       │   ├── DemoToolbar.jsx
+│       │   ├── StudentForm.jsx
+│       │   ├── Dashboard.jsx
+│       │   ├── FunnelChart.jsx
+│       │   ├── PipelineKanban.jsx
+│       │   ├── LeadsTable.jsx
+│       │   ├── LeadDetailDrawer.jsx
+│       │   ├── StallAlertsBanner.jsx
+│       │   ├── AutoResponseViewer.jsx
+│       │   └── SplitView.jsx
+│       ├── hooks/
+│       │   └── useDashboardWebSocket.js  # Client-side WebSocket hook with reconnect logic
+│       └── services/
+│           └── api.js          # API client for Django REST Framework endpoints
 │
-├── docker-compose.yml           # PostgreSQL + Daphne ASGI backend + React Frontend
+├── docker-compose.yml           # PostgreSQL + Daphne ASGI backend + Next.js Frontend
 ├── run.sh                       # Single-command dev launcher
 └── README.md                    # Detailed documentation and evaluation guide
 ```
