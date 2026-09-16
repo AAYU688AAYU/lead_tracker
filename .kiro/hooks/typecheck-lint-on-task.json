@@ -1,0 +1,15 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Typecheck + Lint after every task",
+      "trigger": "PostTaskExec",
+      "description": "Runs ESLint and TypeScript type-check inside apex_fe after every spec task completes, catching naming mismatches and type errors early.",
+      "action": {
+        "type": "command",
+        "command": "cd /Users/brian_kimario/Downloads/lead_tracker/apex_fe && npm run lint 2>&1 && npx tsc --noEmit 2>&1",
+        "timeout": 60
+      }
+    }
+  ]
+}

@@ -1,0 +1,64 @@
+@import "tailwindcss";
+@import "@fontsource-variable/public-sans";
+
+/* ─── Design-system tokens ─────────────────────────────────────────────────── */
+:root {
+  --background:   #FAFAF9;
+  --text:         #1A1A18;
+  --text-muted:   #6B6B66;
+  --accent:       #2B5F4A;   /* primary actions, links, current-stage highlight  */
+  --stalled:      #B8722E;   /* stalled indicator dot + label only               */
+  --destructive:  #A13D3D;   /* reject / delete — use sparingly                  */
+  --border:       #E4E4E0;
+  --font-sans:    "Public Sans Variable", system-ui, sans-serif;
+
+  /* Radius scale */
+  --radius-sm:    4px;   /* inputs, buttons          */
+  --radius-md:    8px;   /* cards, panels            */
+  --radius-pill:  9999px; /* status badges, avatars  */
+
+  /* Motion */
+  --duration:     140ms;
+  --ease:         ease;
+}
+
+/* ─── Tailwind v4 theme mapping ─────────────────────────────────────────────── */
+@theme inline {
+  --color-background:  var(--background);
+  --color-text:        var(--text);
+  --color-muted:       var(--text-muted);
+  --color-accent:      var(--accent);
+  --color-stalled:     var(--stalled);
+  --color-destructive: var(--destructive);
+  --color-border:      var(--border);
+  --font-sans:         var(--font-sans);
+
+  --radius-sm:   var(--radius-sm);
+  --radius-md:   var(--radius-md);
+  --radius-pill: var(--radius-pill);
+
+  /* Spacing scale: 4 8 12 16 24 32 48 — enforced by convention, not locked here */
+}
+
+/* ─── Base ───────────────────────────────────────────────────────────────────── */
+html {
+  color-scheme: light;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 0.9375rem; /* 15px — dense CRM default */
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Transitions: opacity/color only — no scale/bounce */
+*,
+*::before,
+*::after {
+  transition-property: color, background-color, border-color, opacity;
+  transition-duration: var(--duration);
+  transition-timing-function: var(--ease);
+}
