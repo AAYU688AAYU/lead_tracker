@@ -39,6 +39,13 @@ QA procedures and testing standards.
 Operational and development guides.
 - **[Agent Workflow Guide](guides/AGENT_GUIDE.md)** — How to collaborate with the AI agent (Kiro)
 
+### 🎨 [Frontend](/frontend)
+Frontend application documentation and implementation guides.
+- **[Frontend README](frontend/README.md)** — Frontend project overview and structure
+- **[Implementation Guides](frontend/implementation-guides/)** — Feature and optimization guides (25+ guides)
+- **[Reference](frontend/reference/)** — Agent rules, configuration, and context
+- **[Assets](frontend/assets/)** — Audio files and asset documentation
+
 ## Project Structure
 
 ```
