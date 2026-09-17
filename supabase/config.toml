@@ -1,0 +1,42 @@
+project_id = "placement-crm-agency"
+
+[api]
+port = 54321
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 16
+
+[db.pooler]
+port = 54329
+pool_mode = "transaction"
+default_pool_size = 20
+max_client_conn = 100
+
+[realtime]
+enabled = true
+port = 54323
+ip_version = "v4"
+
+[studio]
+port = 54324
+
+[auth]
+enabled = true
+port = 54325
+site_url = "http://localhost:3000"
+additional_redirect_urls = ["http://localhost:3000/auth/callback"]
+jwt_expiry = 3600
+
+[storage]
+enabled = true
+port = 54326
+file_size_limit = "50MiB"
+
+[edge_runtime]
+enabled = true
+port = 54327
+policy = "per_worker"
