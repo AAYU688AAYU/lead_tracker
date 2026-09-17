@@ -1,29 +1,45 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentUser } from '@/lib/auth/server'
+import { sanitizeQueryParams } from '@/lib/api/auth-guard'
 
 /**
  * GET /api/notifications
+ * Phase 10: Secure notification fetching with server-side authorization
  *
- * Fetch paginated notifications for the current user
+ * Fetch paginated notifications for the authenticated user
  *
  * Query params:
- *   - consultant_id: string (required)
  *   - page: number (default: 0)
- *   - limit: number (default: 15)
- *   - filter: string (optional, e.g., 'lead_assigned', 'lead_stalled')
+ *   - limit: number (default: 15, max: 50)
+ *   - type: string (optional, filter by notification type)
  */
 export async function GET(request: NextRequest) {
   try {
+    // 1. AUTHENTICATE
     const user = await getCurrentUser()
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    // 2. SANITIZE QUERY PARAMETERS
     const { searchParams } = new URL(request.url)
-    const page = parseInt(searchParams.get('page') || '0')
-    const limit = parseInt(searchParams.get('limit') || '15')
-    const filter = searchParams.get('filter')
+    const params = sanitizeQueryParams(
+      {
+        page: searchParams.get('page'),
+        limit: searchParams.get('limit'),
+        type: searchParams.get('type'),
+      },
+      {
+        page: { type: 'number', default: 0, min: 0 },
+        limit: { type: 'number', default: 15, min: 1, max: 50 },
+        type: { type: 'string', default: null },
+      }
+    )
+
+    const page = params.page
+    const limit = params.limit
+    const filter = params.type
 
     const supabase = createClient()
     const offset = page * limit

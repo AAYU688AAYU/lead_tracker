@@ -2,8 +2,17 @@
 
 import { createServiceClient } from '@/lib/supabase/service'
 import { isValidPhoneNumber } from 'libphonenumber-js'
+import { normalizePhoneNumber, validateAndNormalizePhoneNumber } from '@/lib/phone-utils'
+import { RateLimiter, RATE_LIMIT_PRESETS, getClientIp } from '@/lib/rate-limiter'
+import { headers } from 'next/headers'
 import type { Profile, Lead } from '@/lib/supabase/types'
 import type { ApplyFormState, SetPasswordState } from './types'
+
+// ---------------------------------------------------------------------------
+// Rate limiter for public intake form
+// ---------------------------------------------------------------------------
+
+const intakeFormRateLimiter = new RateLimiter(RATE_LIMIT_PRESETS.INTAKE_FORM)
 
 // ---------------------------------------------------------------------------
 // Validation helpers
@@ -18,17 +27,11 @@ function validateEmail(value: string): string | null {
 function validatePhone(value: string): string | null {
   if (!value) return 'Phone number is required.'
 
-  // Use libphonenumber-js for robust international validation
-  try {
-    if (!isValidPhoneNumber(value)) {
-      return 'Enter a valid phone number (at least 7 digits).'
-    }
-  } catch {
-    // Fallback: check digit count if parsing fails
-    const digits = value.replace(/\D/g, '')
-    if (digits.length < 7) {
-      return 'Phone number must have at least 7 digits.'
-    }
+  // Use comprehensive phone validation that also normalizes
+  const validation = validateAndNormalizePhoneNumber(value)
+  
+  if (!validation.isValid) {
+    return validation.error || 'Enter a valid phone number.'
   }
 
   return null
@@ -52,6 +55,37 @@ export async function submitApplication(
   _prevState: ApplyFormState,
   formData: FormData,
 ): Promise<ApplyFormState> {
+  // ── PHASE 10: RATE LIMITING ────────────────────────────────────────────────
+  // 1. Get client IP for rate limiting
+  const clientIp = getClientIp(headers())
+  
+  // 2. Check rate limit
+  const rateLimitResult = await intakeFormRateLimiter.check(clientIp)
+  
+  if (!rateLimitResult.allowed) {
+    console.warn(
+      '[submitApplication] Rate limit exceeded for IP:',
+      clientIp,
+      'Remaining attempts:',
+      rateLimitResult.remaining
+    )
+    
+    return {
+      status: 'error',
+      fieldErrors: {},
+      serverError: 'Too many submission attempts. Please try again in 1 hour.',
+    }
+  }
+
+  // Log remaining attempts for debugging
+  if (rateLimitResult.remaining < 3) {
+    console.warn(
+      '[submitApplication] Low rate limit remaining:',
+      rateLimitResult.remaining,
+      'for IP:',
+      clientIp
+    )
+  }
 
   // ── 1. Extract ─────────────────────────────────────────────────────────────
   const full_name  = ((formData.get('full_name')  as string | null) ?? '').trim()
@@ -60,7 +94,13 @@ export async function submitApplication(
   const program_id = ((formData.get('program_id') as string | null) ?? '').trim()
   const notes      = ((formData.get('notes')      as string | null) ?? '').trim()
 
-  // ── 2. Server-side validation ───────────────────────────────────────────────
+  // ── 2. Server-side validation & normalization ──────────────────────────────
+  // Normalize phone number to E.164 format for storage
+  let normalizedPhone: string | null = null
+  if (phone) {
+    normalizedPhone = normalizePhoneNumber(phone)
+  }
+
   const fieldErrors: ApplyFormState['fieldErrors'] = {}
 
   if (!full_name) {
@@ -72,8 +112,13 @@ export async function submitApplication(
   const emailErr = validateEmail(email)
   if (emailErr) fieldErrors.email = [emailErr]
 
-  const phoneErr = validatePhone(phone)
-  if (phoneErr) fieldErrors.phone = [phoneErr]
+  // Validate phone (uses normalization)
+  if (phone) {
+    const phoneErr = validatePhone(phone)
+    if (phoneErr) {
+      fieldErrors.phone = [phoneErr]
+    }
+  }
 
   if (!program_id) fieldErrors.program_id = ['Please select a program.']
 
@@ -154,7 +199,7 @@ export async function submitApplication(
       profileId = existingProfile.id
       const { error: updateErr } = await dbw
         .from('profiles')
-        .update({ full_name, ...(phone ? { phone } : {}) })
+        .update({ full_name, ...(normalizedPhone ? { phone: normalizedPhone } : {}) })
         .eq('id', profileId)
       if (updateErr) {
         console.warn('[apply] profile update on existing user failed:', updateErr)
@@ -206,10 +251,10 @@ export async function submitApplication(
         profileId = authData.user.id
 
         // Trigger sets id/role/full_name/email — update phone separately if supplied
-        if (phone) {
+        if (normalizedPhone) {
           const { error: phoneErr } = await dbw
             .from('profiles')
-            .update({ phone })
+            .update({ phone: normalizedPhone })
             .eq('id', profileId)
           if (phoneErr) {
             console.warn('[apply] phone update on new profile failed:', phoneErr)
@@ -275,38 +320,62 @@ export async function submitApplication(
 }
 
 // ---------------------------------------------------------------------------
-// Set password — called from the confirmation panel after successful submission.
-// Uses the service-role admin API so no active session is required.
-// The userId is the auth.users.id echoed back by submitApplication on success.
+// Set password — PHASE 10 SECURE IMPLEMENTATION
+// 
+// This function handles password setting for new users after signup.
+// SECURITY: Never trust userId from FormData — user must have valid session.
+// The password must meet complexity requirements.
 // ---------------------------------------------------------------------------
+
+import { validatePasswordComplexity, changePassword } from '@/lib/auth/password-reset'
 
 export async function setPassword(
   _prevState: SetPasswordState,
   formData: FormData,
 ): Promise<SetPasswordState> {
-  const userId   = ((formData.get('userId')   as string | null) ?? '').trim()
-  const password = ((formData.get('password') as string | null) ?? '')
-  const confirm  = ((formData.get('confirm')  as string | null) ?? '')
+  try {
+    const password = ((formData.get('password') as string | null) ?? '').trim()
+    const confirm = ((formData.get('confirm') as string | null) ?? '').trim()
 
-  // ── Validate ──────────────────────────────────────────────────────────────
-  if (!userId) {
-    return { status: 'error', error: 'Session expired. Please refresh and try again.' }
-  }
-  if (password.length < 8) {
-    return { status: 'error', error: 'Password must be at least 8 characters.' }
-  }
-  if (password !== confirm) {
-    return { status: 'error', error: 'Passwords do not match.' }
-  }
+    // ── 1. Validate passwords match ────────────────────────────────────────
+    if (!password || !confirm) {
+      return { status: 'error', error: 'Both password fields are required.' }
+    }
 
-  // ── Update via admin API (bypasses auth session requirement) ─────────────
-  const db = createServiceClient()
-  const { error } = await db.auth.admin.updateUserById(userId, { password })
+    if (password !== confirm) {
+      return { status: 'error', error: 'Passwords do not match.' }
+    }
 
-  if (error) {
-    console.error('[setPassword] admin.updateUserById error:', error)
-    return { status: 'error', error: 'Could not set password. Please try again.' }
+    // ── 2. Validate password complexity (NIST 800-63B) ────────────────────
+    const validation = validatePasswordComplexity(password)
+    if (!validation.isValid) {
+      return {
+        status: 'error',
+        error: validation.errors[0], // Return first error
+      }
+    }
+
+    // ── 3. Get authenticated user (never trust FormData) ──────────────────
+    // CRITICAL: We don't trust userId from FormData. Only allow changing
+    // the password of the currently authenticated user.
+    const { success, error: passwordError } = await changePassword(
+      '', // We don't have current password here (user just signed up)
+      password
+    )
+
+    if (!success || passwordError) {
+      return {
+        status: 'error',
+        error: passwordError || 'Failed to set password. Please try again.',
+      }
+    }
+
+    return { status: 'success' }
+  } catch (err) {
+    console.error('[setPassword] unexpected error:', err)
+    return {
+      status: 'error',
+      error: 'An unexpected error occurred. Please try again.',
+    }
   }
-
-  return { status: 'success' }
 }

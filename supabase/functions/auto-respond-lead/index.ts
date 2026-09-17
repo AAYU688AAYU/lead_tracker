@@ -1,22 +1,27 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createHmac } from "https://deno.land/std@0.168.0/node/crypto.ts";
+import { retry, RETRY_PRESETS, CircuitBreaker, isRetryableError } from "../_shared/retry.ts";
 
 /**
- * Phase 9: Auto-Response Edge Function
+ * Phase 10: Enhanced Auto-Response Edge Function
  * 
  * Triggered by: Database Webhook on leads table INSERT
+ * 
+ * Improvements over Phase 9:
+ * 1. Retry logic with exponential backoff for external APIs
+ * 2. Circuit breaker pattern to prevent cascading failures
+ * 3. Improved error classification and handling
+ * 4. Better logging with attempt tracking
+ * 5. Graceful degradation on partial failures
+ * 6. Timeout protection on external API calls
  * 
  * Responsibilities:
  * 1. Verify webhook signature (HMAC-SHA256)
  * 2. Fetch student profile details
- * 3. Send parallel: HTML Email (Resend) + WhatsApp (Twilio)
+ * 3. Send parallel: HTML Email (Resend) + WhatsApp (Twilio) with retry
  * 4. Log results to communication_logs
- * 
- * Error Handling:
- * - Try/catch around external API calls
- * - Log failures without cascading
- * - Return HTTP 200 on partial success
+ * 5. Return partial success if one channel fails
  */
 
 interface WebhookPayload {
@@ -45,6 +50,19 @@ interface CommunicationLog {
   status: "DELIVERED" | "FAILED";
   external_message_id?: string;
 }
+
+// Circuit breakers for external services
+const resendBreaker = new CircuitBreaker({
+  failureThreshold: 5,
+  successThreshold: 3,
+  timeout: 60000, // 1 minute
+});
+
+const twilioBreaker = new CircuitBreaker({
+  failureThreshold: 5,
+  successThreshold: 3,
+  timeout: 60000, // 1 minute
+});
 
 // Helper: Verify webhook signature
 function verifyWebhookSignature(
@@ -76,7 +94,7 @@ async (
   return data?.name || "Your program";
 };
 
-// Helper: Send email via Resend
+// Helper: Send email via Resend with retry
 async function sendEmailViaResend(
   studentEmail: string,
   studentName: string,
@@ -139,34 +157,48 @@ async function sendEmailViaResend(
   `;
 
   try {
-    const response = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${resendApiKey}`,
-      },
-      body: JSON.stringify({
-        from: `Global Admissions Office <admissions@apexcrm.com>`,
-        to: studentEmail,
-        subject: `Application Dossier Received – Welcome, ${studentName}`,
-        html: emailContent,
-      }),
-    });
+    return await resendBreaker.execute(async () =>
+      retry(
+        async () => {
+          const response = await fetch("https://api.resend.com/emails", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${resendApiKey}`,
+            },
+            body: JSON.stringify({
+              from: `Global Admissions Office <admissions@apexcrm.com>`,
+              to: studentEmail,
+              subject: `Application Dossier Received – Welcome, ${studentName}`,
+              html: emailContent,
+            }),
+          });
 
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(`Resend API error: ${JSON.stringify(errorData)}`);
-    }
+          if (!response.ok) {
+            const errorData = await response.json();
+            const error = new Error(`Resend API error: ${JSON.stringify(errorData)}`);
+            (error as any).status = response.status;
+            throw error;
+          }
 
-    const data = await response.json();
-    return { success: true, messageId: data.id };
+          const data = await response.json();
+          return { success: true, messageId: data.id };
+        },
+        RETRY_PRESETS.EXTERNAL_API,
+        (error, attempt) => {
+          console.log(
+            `[resend] Attempt ${attempt}/${RETRY_PRESETS.EXTERNAL_API.maxAttempts}: ${error.message}`
+          );
+        }
+      )
+    );
   } catch (error) {
-    console.error("Resend email error:", error);
-    return { success: false, error: error.message };
+    console.error("[resend] Failed after retries:", error);
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
   }
 }
 
-// Helper: Send WhatsApp via Twilio
+// Helper: Send WhatsApp via Twilio with retry
 async function sendWhatsAppViaTwilio(
   studentPhone: string,
   studentName: string,
@@ -187,45 +219,59 @@ async function sendWhatsAppViaTwilio(
   }
 
   try {
-    // Format phone number for Twilio (add country code if needed)
-    const formattedPhone = studentPhone.startsWith("+")
-      ? studentPhone
-      : `+${studentPhone}`;
+    return await twilioBreaker.execute(async () =>
+      retry(
+        async () => {
+          // Format phone number for Twilio (add country code if needed)
+          const formattedPhone = studentPhone.startsWith("+")
+            ? studentPhone
+            : `+${studentPhone}`;
 
-    const params = new URLSearchParams({
-      From: `whatsapp:${twilioPhoneNumber}`,
-      To: `whatsapp:${formattedPhone}`,
-      ContentSid: templateSid,
-      ContentVariables: JSON.stringify({
-        "1": studentName,
-        "2": targetCountry,
-        "3": referenceCode.substring(0, 8),
-        "4": portalUrl,
-      }),
-    });
+          const params = new URLSearchParams({
+            From: `whatsapp:${twilioPhoneNumber}`,
+            To: `whatsapp:${formattedPhone}`,
+            ContentSid: templateSid,
+            ContentVariables: JSON.stringify({
+              "1": studentName,
+              "2": targetCountry,
+              "3": referenceCode.substring(0, 8),
+              "4": portalUrl,
+            }),
+          });
 
-    const response = await fetch(
-      `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          Authorization: `Basic ${btoa(`${twilioAccountSid}:${twilioAuthToken}`)}`,
+          const response = await fetch(
+            `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/x-www-form-urlencoded",
+                Authorization: `Basic ${btoa(`${twilioAccountSid}:${twilioAuthToken}`)}`,
+              },
+              body: params.toString(),
+            }
+          );
+
+          if (!response.ok) {
+            const errorData = await response.json();
+            const error = new Error(`Twilio API error: ${JSON.stringify(errorData)}`);
+            (error as any).status = response.status;
+            throw error;
+          }
+
+          const data = await response.json();
+          return { success: true, messageId: data.sid };
         },
-        body: params.toString(),
-      }
+        RETRY_PRESETS.EXTERNAL_API,
+        (error, attempt) => {
+          console.log(
+            `[twilio] Attempt ${attempt}/${RETRY_PRESETS.EXTERNAL_API.maxAttempts}: ${error.message}`
+          );
+        }
+      )
     );
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(`Twilio API error: ${JSON.stringify(errorData)}`);
-    }
-
-    const data = await response.json();
-    return { success: true, messageId: data.sid };
   } catch (error) {
-    console.error("Twilio WhatsApp error:", error);
-    return { success: false, error: error.message };
+    console.error("[twilio] Failed after retries:", error);
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
   }
 }
 

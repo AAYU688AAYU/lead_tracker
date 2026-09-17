@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import type { Database } from "@/lib/supabase/types";
+import { getUserRole, getDashboardPathForRole } from "@/lib/auth/jwt-utils";
 
 // Routes that do not require authentication
 const PUBLIC_ROUTES = [
@@ -63,9 +64,10 @@ export async function middleware(request: NextRequest) {
 
   // ── Redirect authenticated users away from /login ────────────────────────
   if (user && pathname === "/login") {
-    const role = await getUserRole(supabase, user.id);
+    // OPTIMIZATION: Use JWT claims to get role (no DB query)
+    const role = await getUserRole(user, supabase);
     return NextResponse.redirect(
-      new URL(dashboardForRole(role), request.url)
+      new URL(getDashboardPathForRole(role), request.url)
     );
   }
 
@@ -73,10 +75,11 @@ export async function middleware(request: NextRequest) {
   if (user) {
     for (const [prefix, allowed] of Object.entries(ROLE_PREFIXES)) {
       if (pathname.startsWith(prefix)) {
-        const role = await getUserRole(supabase, user.id);
+        // OPTIMIZATION: Use JWT claims to get role (no DB query)
+        const role = await getUserRole(user, supabase);
         if (!allowed.includes(role ?? "")) {
           return NextResponse.redirect(
-            new URL(dashboardForRole(role), request.url)
+            new URL(getDashboardPathForRole(role), request.url)
           );
         }
         break;
@@ -87,31 +90,29 @@ export async function middleware(request: NextRequest) {
   return response;
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-async function getUserRole(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  supabase: any,
-  userId: string
-): Promise<string | null> {
-  const { data } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", userId)
-    .single();
-  const row = data as { role: string } | null;
-  return row?.role ?? null;
-}
-
-function dashboardForRole(role: string | null): string {
-  switch (role) {
-    case "consultant": return "/dashboard/consultant";
-    case "admin":      return "/dashboard/admin";
-    default:           return "/dashboard/student";
-  }
-}
+// ─────────────────────────────────────────────────────────────────────────────
+// NOTE: getUserRole() and getUserRoleFromDB() functions removed
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// OPTIMIZATION: JWT Claims Extraction (Phase 10 #7)
+//
+// The middleware now uses JWT custom claims instead of database queries:
+// - PRIMARY: getUserRole() extracts role from user.user_metadata?.role (O(1))
+// - FALLBACK: Only queries DB if JWT claims missing (rare, backwards-compatible)
+//
+// This eliminates the middleware database query bottleneck:
+// - BEFORE: Every request required a DB query to profiles table
+// - AFTER: JWT claims provide instant role information
+//
+// Benefits:
+// 1. Reduced database load (one query removed from middleware)
+// 2. Faster middleware execution (O(1) instead of O(log n) index lookup)
+// 3. Better scalability (middleware is now mostly I/O bound, not DB bound)
+// 4. Graceful fallback for edge cases (handles missing claims)
+//
+// Setup: Run migration 20260918000013_phase10_jwt_role_claims.sql
+//        This creates database triggers to sync role to JWT claims on update.
+// ─────────────────────────────────────────────────────────────────────────────
 
 export const config = {
   matcher: [

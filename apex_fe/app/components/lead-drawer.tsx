@@ -58,6 +58,7 @@ import {
   getLeadDetail,
   updateLeadNotesFromDrawer,
 } from './lead-drawer-actions'
+import { sanitizeHtml, formatUserText } from '@/lib/sanitize'
 import type {
   LeadDetailFull,
   TimelineEntry,
@@ -390,7 +391,13 @@ function NotesSection({
       {!editing ? (
         <div className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--background)] p-3">
           <p className="text-sm text-[var(--text)]">
-            {lead.notes || (
+            {lead.notes ? (
+              <span
+                dangerouslySetInnerHTML={{
+                  __html: sanitizeHtml(lead.notes),
+                }}
+              />
+            ) : (
               <span className="text-[var(--text-muted)] italic">No notes yet.</span>
             )}
           </p>

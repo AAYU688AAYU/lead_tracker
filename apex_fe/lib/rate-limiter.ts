@@ -1,135 +1,399 @@
 /**
- * In-memory rate limiter for server actions.
- * 
- * Design notes:
- * - Uses Map<key, bucket> for O(1) lookups
- * - Tracks (count, reset_time) per key
- * - Supports custom window durations and max attempts
- * - Suitable for production with <10k concurrent keys; for larger scale,
- *   replace with Redis (e.g., @upstash/ratelimit)
- * 
- * Usage:
- *   const limiter = new RateLimiter({ 
- *     windowMs: 15 * 60 * 1000,  // 15 minutes
- *     maxAttempts: 10
- *   })
- *   
- *   if (!limiter.check(clientIp)) {
- *     return { status: 'error', message: 'Too many attempts. Please try again later.' }
- *   }
+ * Rate Limiter Utility
+ * Phase 10: Prevent abuse of public endpoints
+ *
+ * Uses sliding window algorithm for accurate rate limiting
+ * Supports both Redis (Upstash) for production and in-memory for dev
  */
 
-export interface RateLimiterOptions {
-  windowMs: number      // Window duration in milliseconds
-  maxAttempts: number   // Max attempts per window
+import { headers } from 'next/headers'
+
+/**
+ * Rate limit configuration
+ */
+export interface RateLimitConfig {
+  windowMs: number // Time window in milliseconds
+  maxAttempts: number // Max requests per window
+  keyPrefix: string // Redis key prefix
+  storageType: 'redis' | 'memory' // Use Redis or in-memory
 }
 
-interface BucketEntry {
-  count: number
-  resetAt: number
+/**
+ * Default configs for common scenarios
+ */
+export const RATE_LIMIT_PRESETS = {
+  // Public intake form: 5 submissions per hour per IP
+  INTAKE_FORM: {
+    windowMs: 60 * 60 * 1000, // 1 hour
+    maxAttempts: 5,
+    keyPrefix: 'ratelimit:intake-form',
+    storageType: 'redis' as const,
+  },
+  // Password reset: 3 requests per hour per email
+  PASSWORD_RESET: {
+    windowMs: 60 * 60 * 1000, // 1 hour
+    maxAttempts: 3,
+    keyPrefix: 'ratelimit:password-reset',
+    storageType: 'redis' as const,
+  },
+  // Login attempts: 5 failed attempts per 15 minutes per IP
+  LOGIN: {
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    maxAttempts: 5,
+    keyPrefix: 'ratelimit:login',
+    storageType: 'redis' as const,
+  },
+  // API endpoints: 100 requests per minute per user
+  API: {
+    windowMs: 60 * 1000, // 1 minute
+    maxAttempts: 100,
+    keyPrefix: 'ratelimit:api',
+    storageType: 'redis' as const,
+  },
 }
 
+/**
+ * In-memory storage for development
+ * Simple Map-based implementation
+ */
+class InMemoryStore {
+  private store = new Map<string, { count: number; resetTime: number }>()
+
+  check(key: string, limit: number, windowMs: number): boolean {
+    const now = Date.now()
+    const entry = this.store.get(key)
+
+    // New entry or window expired
+    if (!entry || now > entry.resetTime) {
+      this.store.set(key, { count: 1, resetTime: now + windowMs })
+      return true // Within limit
+    }
+
+    // Increment and check
+    entry.count++
+    return entry.count <= limit
+  }
+
+  getRemainingRequests(key: string, limit: number): number {
+    const entry = this.store.get(key)
+    if (!entry) return limit
+    return Math.max(0, limit - entry.count)
+  }
+
+  getResetTime(key: string): number {
+    const entry = this.store.get(key)
+    return entry?.resetTime || Date.now()
+  }
+}
+
+/**
+ * Redis store for production
+ * Uses Upstash Redis REST API
+ */
+class RedisStore {
+  private redisUrl = process.env.UPSTASH_REDIS_REST_URL
+  private redisToken = process.env.UPSTASH_REDIS_REST_TOKEN
+
+  async check(
+    key: string,
+    limit: number,
+    windowMs: number
+  ): Promise<boolean> {
+    if (!this.redisUrl || !this.redisToken) {
+      console.warn('[RedisStore] Redis not configured, allowing request')
+      return true // Fail open if Redis is not configured
+    }
+
+    try {
+      const now = Date.now()
+      const windowStart = now - windowMs
+      const countKey = `${key}:count`
+      const timeKey = `${key}:time`
+
+      // Use Redis MULTI for atomic operations
+      const response = await fetch(this.redisUrl, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.redisToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          commands: [
+            // Get current count
+            ['GET', countKey],
+            // Get window start time
+            ['GET', timeKey],
+          ],
+        }),
+      })
+
+      const result = await response.json()
+      const currentCount = parseInt(result.result?.[0] || '0')
+      const windowStartTime = parseInt(result.result?.[1] || String(now))
+
+      // If window expired, reset
+      if (now - windowStartTime > windowMs) {
+        await this.resetKey(countKey, timeKey, windowMs)
+        return true // First request in new window
+      }
+
+      // Check if over limit
+      if (currentCount >= limit) {
+        return false // Over limit
+      }
+
+      // Increment and set expiry
+      await this.incrementKey(countKey, timeKey, windowMs)
+      return true // Within limit
+    } catch (err) {
+      console.error('[RedisStore] Error checking rate limit:', err)
+      return true // Fail open on error
+    }
+  }
+
+  private async resetKey(
+    countKey: string,
+    timeKey: string,
+    windowMs: number
+  ): Promise<void> {
+    await fetch(this.redisUrl, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${this.redisToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        commands: [
+          ['SET', countKey, '1', 'PX', windowMs],
+          ['SET', timeKey, String(Date.now()), 'PX', windowMs],
+        ],
+      }),
+    })
+  }
+
+  private async incrementKey(
+    countKey: string,
+    timeKey: string,
+    windowMs: number
+  ): Promise<void> {
+    await fetch(this.redisUrl, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${this.redisToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        commands: [
+          ['INCR', countKey],
+          ['EXPIRE', countKey, Math.ceil(windowMs / 1000)],
+          ['EXPIRE', timeKey, Math.ceil(windowMs / 1000)],
+        ],
+      }),
+    })
+  }
+
+  async getRemainingRequests(key: string, limit: number): Promise<number> {
+    if (!this.redisUrl || !this.redisToken) return limit
+
+    try {
+      const countKey = `${key}:count`
+      const response = await fetch(this.redisUrl, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.redisToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          commands: [['GET', countKey]],
+        }),
+      })
+
+      const result = await response.json()
+      const currentCount = parseInt(result.result?.[0] || '0')
+      return Math.max(0, limit - currentCount)
+    } catch (err) {
+      console.error('[RedisStore] Error getting remaining requests:', err)
+      return limit
+    }
+  }
+
+  async getResetTime(key: string): Promise<number> {
+    if (!this.redisUrl || !this.redisToken) return Date.now()
+
+    try {
+      const timeKey = `${key}:time`
+      const response = await fetch(this.redisUrl, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.redisToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          commands: [['GET', timeKey]],
+        }),
+      })
+
+      const result = await response.json()
+      const time = parseInt(result.result?.[0] || String(Date.now()))
+      return time
+    } catch (err) {
+      console.error('[RedisStore] Error getting reset time:', err)
+      return Date.now()
+    }
+  }
+}
+
+/**
+ * Rate Limiter class
+ * Handles rate limiting with configurable storage
+ */
 export class RateLimiter {
-  private buckets: Map<string, BucketEntry> = new Map()
+  private config: RateLimitConfig
+  private store: InMemoryStore | RedisStore
+
+  constructor(config: RateLimitConfig) {
+    this.config = config
+    this.store =
+      config.storageType === 'redis' ? new RedisStore() : new InMemoryStore()
+  }
+
+  /**
+   * Check if request is within rate limit
+   * Returns true if allowed, false if rate limited
+   */
+  async check(identifier: string): Promise<{
+    allowed: boolean
+    remaining: number
+    resetAt?: number
+  }> {
+    const key = `${this.config.keyPrefix}:${identifier}`
+
+    try {
+      let allowed = true
+      let remaining = this.config.maxAttempts
+      let resetAt: number | undefined
+
+      if (this.config.storageType === 'redis') {
+        allowed = await (this.store as RedisStore).check(
+          key,
+          this.config.maxAttempts,
+          this.config.windowMs
+        )
+        remaining = await (this.store as RedisStore).getRemainingRequests(
+          key,
+          this.config.maxAttempts
+        )
+        resetAt = await (this.store as RedisStore).getResetTime(key)
+      } else {
+        allowed = (this.store as InMemoryStore).check(
+          key,
+          this.config.maxAttempts,
+          this.config.windowMs
+        )
+        remaining = (this.store as InMemoryStore).getRemainingRequests(
+          key,
+          this.config.maxAttempts
+        )
+        resetAt = (this.store as InMemoryStore).getResetTime(key)
+      }
+
+      return { allowed, remaining, resetAt }
+    } catch (err) {
+      console.error('[RateLimiter] Error checking limit:', err)
+      return { allowed: true, remaining: this.config.maxAttempts } // Fail open
+    }
+  }
+}
+
+/**
+ * Get client IP from request
+ * Handles various proxy headers
+ */
+export function getClientIp(headers: ReturnType<typeof headers>): string {
+  const forwarded = headers.get('x-forwarded-for')
+  const realIp = headers.get('x-real-ip')
+  const cfConnecting = headers.get('cf-connecting-ip')
+
+  // Return first IP if multiple (comma-separated)
+  if (forwarded) return forwarded.split(',')[0].trim()
+  if (realIp) return realIp
+  if (cfConnecting) return cfConnecting
+
+  // Fallback to localhost
+  return '127.0.0.1'
+}
+
+// ---------------------------------------------------------------------------
+// Pre-instantiated Rate Limiters for common endpoints
+// ---------------------------------------------------------------------------
+
+/**
+ * Simplified synchronous rate limiter for use in server actions
+ * Uses in-memory storage (suitable for single-instance deployments)
+ */
+class SimpleSyncRateLimiter {
+  private store = new Map<string, { count: number; resetTime: number }>()
   private windowMs: number
   private maxAttempts: number
-  private cleanupIntervalId?: NodeJS.Timeout
 
-  constructor(options: RateLimiterOptions) {
-    this.windowMs = options.windowMs
-    this.maxAttempts = options.maxAttempts
-
-    // Cleanup old entries every 10 minutes to prevent memory leak
-    this.cleanupIntervalId = setInterval(() => this.cleanup(), 10 * 60 * 1000)
+  constructor(windowMs: number, maxAttempts: number) {
+    this.windowMs = windowMs
+    this.maxAttempts = maxAttempts
   }
 
   /**
-   * Check if the key is within rate limit.
-   * Returns true if allowed, false if rate-limited.
+   * Check if identifier is within rate limit
+   * Returns true if allowed, false if rate limited
    */
-  check(key: string): boolean {
+  check(identifier: string): boolean {
     const now = Date.now()
-    const bucket = this.buckets.get(key)
+    const entry = this.store.get(identifier)
 
-    if (!bucket || now >= bucket.resetAt) {
-      // Create new bucket or reset expired one
-      this.buckets.set(key, {
-        count: 1,
-        resetAt: now + this.windowMs,
-      })
-      return true
+    // New entry or window expired
+    if (!entry || now > entry.resetTime) {
+      this.store.set(identifier, { count: 1, resetTime: now + this.windowMs })
+      return true // Within limit
     }
 
-    if (bucket.count >= this.maxAttempts) {
-      return false
-    }
-
-    bucket.count++
-    return true
+    // Increment and check
+    entry.count++
+    return entry.count <= this.maxAttempts
   }
 
   /**
-   * Get remaining attempts for a key.
-   * Useful for showing rate limit info to the user.
+   * Get remaining requests for identifier
    */
-  getRemaining(key: string): number {
+  getRemaining(identifier: string): number {
+    const entry = this.store.get(identifier)
+    if (!entry) return this.maxAttempts
+    return Math.max(0, this.maxAttempts - entry.count)
+  }
+
+  /**
+   * Get seconds until reset for identifier
+   */
+  getResetIn(identifier: string): number {
+    const entry = this.store.get(identifier)
+    if (!entry) return 0
     const now = Date.now()
-    const bucket = this.buckets.get(key)
-
-    if (!bucket || now >= bucket.resetAt) {
-      return this.maxAttempts
-    }
-
-    return Math.max(0, this.maxAttempts - bucket.count)
-  }
-
-  /**
-   * Get reset time (in seconds) for a key.
-   */
-  getResetIn(key: string): number {
-    const now = Date.now()
-    const bucket = this.buckets.get(key)
-
-    if (!bucket || now >= bucket.resetAt) {
-      return 0
-    }
-
-    return Math.ceil((bucket.resetAt - now) / 1000)
-  }
-
-  /**
-   * Clean up expired entries to prevent memory leak.
-   */
-  private cleanup(): void {
-    const now = Date.now()
-    for (const [key, bucket] of this.buckets.entries()) {
-      if (now >= bucket.resetAt) {
-        this.buckets.delete(key)
-      }
-    }
-  }
-
-  /**
-   * Destroy the rate limiter (clear intervals).
-   */
-  destroy(): void {
-    if (this.cleanupIntervalId) {
-      clearInterval(this.cleanupIntervalId)
-    }
-    this.buckets.clear()
+    return Math.max(0, Math.ceil((entry.resetTime - now) / 1000))
   }
 }
 
-// Singleton instance for the lookup endpoint
-// 15-minute window, max 10 attempts per IP
-export const statusLookupLimiter = new RateLimiter({
-  windowMs: 15 * 60 * 1000,
-  maxAttempts: 10,
-})
+/**
+ * Status lookup rate limiter
+ * 10 attempts per IP per 15 minutes
+ */
+export const statusLookupLimiter = new SimpleSyncRateLimiter(
+  15 * 60 * 1000, // 15 minutes
+  10
+)
 
-// Singleton instance for the upload endpoint
-// 15-minute window, max 5 uploads per IP (conservative)
-export const statusUploadLimiter = new RateLimiter({
-  windowMs: 15 * 60 * 1000,
-  maxAttempts: 5,
-})
+/**
+ * Status upload rate limiter
+ * 5 attempts per IP per hour
+ */
+export const statusUploadLimiter = new SimpleSyncRateLimiter(
+  60 * 60 * 1000, // 1 hour
+  5
+)

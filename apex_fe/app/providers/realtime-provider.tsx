@@ -99,12 +99,13 @@ class ExponentialBackoff {
 
 interface RealtimeProviderProps {
   consultantId: string
+  initialLeads?: Lead[]
   children: ReactNode
 }
 
-export function RealtimeProvider({ consultantId, children }: RealtimeProviderProps) {
-  // State
-  const [leads, setLeads] = useState<Lead[]>([])
+export function RealtimeProvider({ consultantId, initialLeads = [], children }: RealtimeProviderProps) {
+  // State - initialize with passed-in leads
+  const [leads, setLeads] = useState<Lead[]>(initialLeads)
   const [stalledLeadIds, setStalledLeadIds] = useState<Set<string>>(new Set())
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'reconnecting' | 'error'>(
     'connected'

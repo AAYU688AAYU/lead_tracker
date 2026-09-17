@@ -531,12 +531,6 @@ export function KanbanBoard({
   // RealtimeProvider's useCRMRealtime hook which maintains a single connection.
   const { leads: realtimeLeads, stalledLeadIds: stalled } = useCRMRealtime()
 
-  // Sync realtime leads into local state for kanban interaction
-  useEffect(() => {
-    // Update our leads whenever realtime state changes
-    setLeads(realtimeLeads)
-  }, [realtimeLeads])
-
   // Stalled leads tracking for visual indicators
   const stalledLeadIds = Array.from(stalled)
 

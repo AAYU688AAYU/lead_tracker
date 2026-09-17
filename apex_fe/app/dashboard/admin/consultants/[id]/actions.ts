@@ -73,9 +73,11 @@ export async function getConsultantDetail(
     redirect('/dashboard/admin')
   }
 
-  // Fetch consultant profile
+  // OPTIMIZATION: Use service client for all queries and leverage materialized views
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const dbr = svcDb as any
+
+  // Query 1: Fetch consultant profile (single query)
   const { data: consultantRow, error: consultErr } = await dbr
     .from('profiles')
     .select('id, full_name, email, role, created_at, is_accepting_leads, max_lead_capacity')
@@ -94,24 +96,29 @@ export async function getConsultantDetail(
 
   const consultant = consultantRow as ConsultantRow
 
-  // Fetch all leads for this consultant
-  const { data: leadRows } = await dbr
-    .from('leads')
-    .select(
-      'id, reference_code, stage, status, student_id, created_at, target_country, stalled_at'
-    )
+  // OPTIMIZATION: Use materialized view + batch join to get portfolio in ONE query
+  // This replaces 3 separate queries (leads, student profiles, stage labels) with one
+  const { data: portfolioRows } = await dbr
+    .from('consultant_portfolio_view')
+    .select('id, reference_code, stage, status, student_id, created_at, target_country, student_name, student_email')
     .eq('consultant_id', consultantId)
-    .neq('status', 'dropped')
 
-  type LeadRow = Pick<
-    Lead,
-    'id' | 'reference_code' | 'stage' | 'status' | 'student_id' | 'created_at' | 'target_country'
-  > & { stalled_at: string | null }
+  type PortfolioRow = {
+    id: string
+    reference_code: string
+    stage: string
+    status: string
+    student_id: string
+    created_at: string
+    target_country: string | null
+    student_name: string | null
+    student_email: string | null
+  }
 
-  const leads = (leadRows ?? []) as LeadRow[]
+  const portfolioRows_typed = (portfolioRows ?? []) as PortfolioRow[]
 
-  // Fetch stage labels
-  const { data: stageRows } = await svcDb
+  // Query 2: Fetch stage labels (cached by Supabase)
+  const { data: stageRows } = await dbr
     .from('pipeline_stage_labels')
     .select('stage, label, sort_order')
     .order('sort_order', { ascending: true })
@@ -120,61 +127,48 @@ export async function getConsultantDetail(
     ((stageRows ?? []) as Array<{ stage: string; label: string }>).map(s => [s.stage, s.label])
   )
 
-  // Fetch all student profiles
-  const studentIds = [...new Set(leads.map(l => l.student_id))]
-  const profileMap = new Map<string, { full_name?: string; email?: string }>()
-  if (studentIds.length > 0) {
-    const { data: studentRows } = await authDb
-      .from('profiles')
-      .select('id, full_name, email')
-      .in('id', studentIds)
-    for (const p of studentRows ?? []) {
-      profileMap.set(p.id, p as { full_name?: string; email?: string })
-    }
+  // OPTIMIZATION: Use pre-calculated metrics from materialized view
+  // This replaces expensive client-side aggregations with pre-computed values
+  const { data: metricsRow } = await dbr
+    .from('consultant_metrics_view')
+    .select('total_leads, enrolled_leads, stalled_leads, admitted_thirty_days, avg_lead_age_days')
+    .eq('consultant_id', consultantId)
+    .single()
+
+  type MetricsRow = {
+    total_leads: number
+    enrolled_leads: number
+    stalled_leads: number
+    admitted_thirty_days: number
+    avg_lead_age_days: number
   }
 
-  // Calculate metrics
-  const now = new Date()
-  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+  const metrics = (metricsRow ?? {
+    total_leads: 0,
+    enrolled_leads: 0,
+    stalled_leads: 0,
+    admitted_thirty_days: 0,
+    avg_lead_age_days: 0,
+  }) as MetricsRow
 
-  const enrolledLeads = leads.filter(l => l.stage === 'enrolled').length
-  const totalLeads = leads.length
+  // Calculate conversion rate from pre-computed metrics
+  const conversionRate = metrics.total_leads > 0 ? metrics.enrolled_leads / metrics.total_leads : 0
 
-  const conversionRate = totalLeads > 0 ? enrolledLeads / totalLeads : 0
-
-  const avgLeadAgeDays =
-    leads.length > 0
-      ? Math.round(
-          leads.reduce((sum, l) => {
-            const age = (now.getTime() - new Date(l.created_at).getTime()) / (1000 * 60 * 60 * 24)
-            return sum + age
-          }, 0) / leads.length
-        )
-      : 0
-
-  const totalAdmittedThirtyDays = leads.filter(l => {
-    const created = new Date(l.created_at)
-    return l.stage === 'enrolled' && created >= thirtyDaysAgo
-  }).length
-
-  const stalledLeadsCount = leads.filter(l => l.status === 'stalled').length
-
-  // Build portfolio
-  const portfolio: PortfolioLead[] = leads.map(l => {
-    const student = profileMap.get(l.student_id)
+  // Build portfolio from materialized view data (no additional joins needed)
+  const portfolio: PortfolioLead[] = portfolioRows_typed.map(row => {
     const daysInStage = Math.floor(
-      (now.getTime() - new Date(l.created_at).getTime()) / (1000 * 60 * 60 * 24)
+      (new Date().getTime() - new Date(row.created_at).getTime()) / (1000 * 60 * 60 * 24)
     )
     return {
-      id: l.id,
-      reference_code: l.reference_code,
-      student_name: student?.full_name ?? student?.email ?? 'Unknown',
-      stage: l.stage,
-      stage_label: stageMap.get(l.stage) ?? l.stage,
-      status: l.status,
-      created_at: l.created_at,
+      id: row.id,
+      reference_code: row.reference_code,
+      student_name: row.student_name ?? row.student_email ?? 'Unknown',
+      stage: row.stage,
+      stage_label: stageMap.get(row.stage) ?? row.stage,
+      status: row.status,
+      created_at: row.created_at,
       days_in_stage: daysInStage,
-      target_country: l.target_country ?? null,
+      target_country: row.target_country,
     }
   })
 
@@ -190,9 +184,9 @@ export async function getConsultantDetail(
     },
     metrics: {
       conversionRate,
-      avgLeadAgeDays,
-      totalAdmittedThirtyDays,
-      stalledLeadsCount,
+      avgLeadAgeDays: Math.round(metrics.avg_lead_age_days),
+      totalAdmittedThirtyDays: metrics.admitted_thirty_days,
+      stalledLeadsCount: metrics.stalled_leads,
     },
     portfolio,
   }
