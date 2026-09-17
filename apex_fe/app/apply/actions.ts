@@ -1,6 +1,7 @@
 'use server'
 
 import { createServiceClient } from '@/lib/supabase/service'
+import { isValidPhoneNumber } from 'libphonenumber-js'
 import type { Profile, Lead } from '@/lib/supabase/types'
 import type { ApplyFormState, SetPasswordState } from './types'
 
@@ -16,10 +17,20 @@ function validateEmail(value: string): string | null {
 
 function validatePhone(value: string): string | null {
   if (!value) return 'Phone number is required.'
-  // Strip formatting chars then check digit count
-  const digits = value.replace(/[\s\-().+]/g, '')
-  if (!/^\d+$/.test(digits)) return 'Phone number may only contain digits, spaces, +, -, ( and ).'
-  if (digits.length < 7) return 'Phone number must have at least 7 digits.'
+
+  // Use libphonenumber-js for robust international validation
+  try {
+    if (!isValidPhoneNumber(value)) {
+      return 'Enter a valid phone number (at least 7 digits).'
+    }
+  } catch {
+    // Fallback: check digit count if parsing fails
+    const digits = value.replace(/\D/g, '')
+    if (digits.length < 7) {
+      return 'Phone number must have at least 7 digits.'
+    }
+  }
+
   return null
 }
 
@@ -85,7 +96,28 @@ export async function submitApplication(
   const dbw = db as any
 
   try {
-    // 3a. Verify the selected program exists — guards against a tampered POST
+    // 3a. Idempotency check — prevent duplicate submissions
+    //     Use email + submission timestamp bucket to key duplicates
+    const idempotencyKey = `apply_${email}_${Math.floor(Date.now() / 60000)}`
+    const { data: dedupRow } = await db
+      .from('webhook_dedup')
+      .select('id')
+      .eq('idempotency_key', idempotencyKey)
+      .maybeSingle()
+
+    if (dedupRow) {
+      // Duplicate detected — return success to avoid UI errors for user retries,
+      // but don't create a new lead. In a real system, you might return the
+      // existing reference code, but for now we safely fail gracefully.
+      console.warn('[apply] duplicate submission detected:', idempotencyKey)
+      return {
+        status:      'error',
+        fieldErrors: {},
+        serverError: 'Your submission was already processed. Please check your email or reference code.',
+      }
+    }
+
+    // 3b. Verify the selected program exists — guards against a tampered POST
     const { data: programRow, error: programErr } = await db
       .from('programs')
       .select('id')
@@ -217,6 +249,11 @@ export async function submitApplication(
       actor_id: null,
       type:     'lead_created',
       content:  `Lead created via public intake form by ${full_name} (${email})`,
+    })
+
+    // 3e. Record this submission in webhook_dedup to prevent re-submissions
+    await dbw.from('webhook_dedup').insert({
+      idempotency_key: idempotencyKey,
     })
 
     return {

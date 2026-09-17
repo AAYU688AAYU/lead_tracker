@@ -387,3 +387,36 @@ export async function reassignConsultantFromDrawer(
   revalidatePath('/dashboard/admin')
   return { status: 'success', consultant_id, consultant_name }
 }
+
+
+// ---------------------------------------------------------------------------
+// TIER 2: updateLeadNotesFromDrawer — update lead notes (admin/consultant)
+// ---------------------------------------------------------------------------
+
+export async function updateLeadNotesFromDrawer(
+  _prev: DrawerMutationState,
+  formData: FormData,
+): Promise<DrawerMutationState> {
+  const lead_id = ((formData.get('lead_id') as string | null) ?? '').trim()
+  const notes = ((formData.get('notes') as string | null) ?? '').trim().slice(0, 1000)
+
+  if (!lead_id) return { status: 'error', message: 'Missing lead.' }
+
+  const authDb = await createClient()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const dbw = authDb as any
+
+  const { error } = await dbw
+    .from('leads')
+    .update({ notes: notes || null })
+    .eq('id', lead_id)
+
+  if (error) {
+    console.error('[drawer] updateLeadNotes error:', error)
+    return { status: 'error', message: 'Could not save notes.' }
+  }
+
+  revalidatePath('/dashboard/admin')
+  revalidatePath('/dashboard/consultant')
+  return { status: 'success' }
+}

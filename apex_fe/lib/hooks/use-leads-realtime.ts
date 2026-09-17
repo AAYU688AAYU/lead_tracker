@@ -22,14 +22,17 @@
  *
  * Cleanup: the channel is removed when the component unmounts or when
  * `filter` / `channelSuffix` changes.
+ *
+ * Returns: connection status ('connected' | 'reconnecting' | 'error')
  */
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js'
 import type { Lead } from '@/lib/supabase/types'
 
 export type LeadChangePayload = RealtimePostgresChangesPayload<Partial<Lead>>
+export type RealtimeSubscriptionStatus = 'connected' | 'reconnecting' | 'error'
 
 interface UseLeadsRealtimeOptions {
   /** Supabase filter string, e.g. `consultant_id=eq.abc123`.  Omit for all rows. */
@@ -43,8 +46,9 @@ interface UseLeadsRealtimeOptions {
 export function useLeadsRealtime(
   options: UseLeadsRealtimeOptions,
   onLeadChange: (payload: LeadChangePayload) => void,
-): void {
+): RealtimeSubscriptionStatus {
   const { filter, channelSuffix = 'default', enabled = true } = options
+  const [status, setStatus] = useState<RealtimeSubscriptionStatus>('connected')
 
   // Stable ref for the callback — avoids re-subscribing when the handler
   // identity changes between renders (common with inline arrow functions).
@@ -69,11 +73,19 @@ export function useLeadsRealtime(
       .on(
         'postgres_changes',
         channelConfig,
-        (payload) => handlerRef.current(payload as LeadChangePayload),
+        (payload) => {
+          setStatus('connected')
+          handlerRef.current(payload as LeadChangePayload)
+        },
       )
-      .subscribe((status) => {
-        if (status === 'CHANNEL_ERROR') {
+      .subscribe((subscriptionStatus) => {
+        if (subscriptionStatus === 'CHANNEL_ERROR') {
           console.error('[useLeadsRealtime] channel error', channelName)
+          setStatus('error')
+        } else if (subscriptionStatus === 'SUBSCRIBED') {
+          setStatus('connected')
+        } else if (subscriptionStatus === 'TIMED_OUT') {
+          setStatus('reconnecting')
         }
       })
 
@@ -83,6 +95,8 @@ export function useLeadsRealtime(
   // Re-subscribe only when structural options change, not the callback.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, filter, channelSuffix])
+
+  return status
 }
 
 
@@ -106,8 +120,9 @@ interface UseDocumentsRealtimeOptions {
 export function useDocumentsRealtime(
   options: UseDocumentsRealtimeOptions,
   onDocumentChange: (payload: DocumentChangePayload) => void,
-): void {
+): RealtimeSubscriptionStatus {
   const { filter, channelSuffix = 'default', enabled = true } = options
+  const [status, setStatus] = useState<RealtimeSubscriptionStatus>('connected')
 
   const handlerRef = useRef(onDocumentChange)
   useEffect(() => { handlerRef.current = onDocumentChange })
@@ -130,11 +145,19 @@ export function useDocumentsRealtime(
       .on(
         'postgres_changes',
         channelConfig,
-        (payload) => handlerRef.current(payload as DocumentChangePayload),
+        (payload) => {
+          setStatus('connected')
+          handlerRef.current(payload as DocumentChangePayload)
+        },
       )
-      .subscribe((status) => {
-        if (status === 'CHANNEL_ERROR') {
+      .subscribe((subscriptionStatus) => {
+        if (subscriptionStatus === 'CHANNEL_ERROR') {
           console.error('[useDocumentsRealtime] channel error', channelName)
+          setStatus('error')
+        } else if (subscriptionStatus === 'SUBSCRIBED') {
+          setStatus('connected')
+        } else if (subscriptionStatus === 'TIMED_OUT') {
+          setStatus('reconnecting')
         }
       })
 
@@ -143,6 +166,8 @@ export function useDocumentsRealtime(
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, filter, channelSuffix])
+
+  return status
 }
 
 
@@ -167,8 +192,9 @@ interface UseActivityLogsRealtimeOptions {
 export function useActivityLogsRealtime(
   options: UseActivityLogsRealtimeOptions,
   onActivityChange: (payload: ActivityLogChangePayload) => void,
-): void {
+): RealtimeSubscriptionStatus {
   const { leadId, enabled = true } = options
+  const [status, setStatus] = useState<RealtimeSubscriptionStatus>('connected')
 
   const handlerRef = useRef(onActivityChange)
   useEffect(() => { handlerRef.current = onActivityChange })
@@ -189,11 +215,19 @@ export function useActivityLogsRealtime(
           table:  'activity_logs',
           filter: `lead_id=eq.${leadId}`,
         },
-        (payload) => handlerRef.current(payload as ActivityLogChangePayload),
+        (payload) => {
+          setStatus('connected')
+          handlerRef.current(payload as ActivityLogChangePayload)
+        },
       )
-      .subscribe((status) => {
-        if (status === 'CHANNEL_ERROR') {
+      .subscribe((subscriptionStatus) => {
+        if (subscriptionStatus === 'CHANNEL_ERROR') {
           console.error('[useActivityLogsRealtime] channel error', channelName)
+          setStatus('error')
+        } else if (subscriptionStatus === 'SUBSCRIBED') {
+          setStatus('connected')
+        } else if (subscriptionStatus === 'TIMED_OUT') {
+          setStatus('reconnecting')
         }
       })
 
@@ -202,6 +236,8 @@ export function useActivityLogsRealtime(
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, leadId])
+
+  return status
 }
 
 
@@ -224,8 +260,9 @@ interface UseCommunicationLogsRealtimeOptions {
 export function useCommunicationLogsRealtime(
   options: UseCommunicationLogsRealtimeOptions,
   onCommChange: (payload: CommunicationLogChangePayload) => void,
-): void {
+): RealtimeSubscriptionStatus {
   const { leadId, enabled = true } = options
+  const [status, setStatus] = useState<RealtimeSubscriptionStatus>('connected')
 
   const handlerRef = useRef(onCommChange)
   useEffect(() => { handlerRef.current = onCommChange })
@@ -246,11 +283,19 @@ export function useCommunicationLogsRealtime(
           table:  'communication_logs',
           filter: `lead_id=eq.${leadId}`,
         },
-        (payload) => handlerRef.current(payload as CommunicationLogChangePayload),
+        (payload) => {
+          setStatus('connected')
+          handlerRef.current(payload as CommunicationLogChangePayload)
+        },
       )
-      .subscribe((status) => {
-        if (status === 'CHANNEL_ERROR') {
+      .subscribe((subscriptionStatus) => {
+        if (subscriptionStatus === 'CHANNEL_ERROR') {
           console.error('[useCommunicationLogsRealtime] channel error', channelName)
+          setStatus('error')
+        } else if (subscriptionStatus === 'SUBSCRIBED') {
+          setStatus('connected')
+        } else if (subscriptionStatus === 'TIMED_OUT') {
+          setStatus('reconnecting')
         }
       })
 
@@ -259,4 +304,6 @@ export function useCommunicationLogsRealtime(
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, leadId])
+
+  return status
 }

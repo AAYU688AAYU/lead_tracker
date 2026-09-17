@@ -20,19 +20,19 @@ import type { LeadStatus } from '@/lib/supabase/types'
 const inputBase =
   'mt-1 block w-full rounded-[var(--radius-sm)] border border-[var(--border)] bg-white ' +
   'px-3 py-2 text-sm text-[var(--text)] placeholder-[var(--text-muted)] ' +
-  'focus:border-[var(--accent)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)] ' +
+  'focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)] ' +
   'disabled:opacity-50'
 
 const btnPrimary =
   'rounded-[var(--radius-sm)] bg-[var(--accent)] px-3 py-1.5 text-xs font-semibold text-white ' +
-  'transition-colors hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-[var(--accent)] ' +
-  'focus:ring-offset-1 disabled:opacity-50'
+  'transition-colors hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] ' +
+  'focus-visible:ring-offset-1 disabled:opacity-50'
 
 const btnOutline =
   'rounded-[var(--radius-sm)] border border-[var(--border)] bg-white px-3 py-1.5 text-xs ' +
   'font-medium text-[var(--text-muted)] transition-colors hover:border-[var(--accent)] ' +
-  'hover:text-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] ' +
-  'focus:ring-offset-1 disabled:opacity-50'
+  'hover:text-[var(--accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] ' +
+  'focus-visible:ring-offset-1 disabled:opacity-50'
 
 // ---------------------------------------------------------------------------
 // Status badge
@@ -120,7 +120,7 @@ function StageControls({
           name="status"
           defaultValue={currentStatus}
           disabled={statPending}
-          className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-white px-2 py-1.5 text-xs text-[var(--text)] focus:border-[var(--accent)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)] disabled:opacity-50"
+          className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-white px-2 py-1.5 text-xs text-[var(--text)] focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)] disabled:opacity-50"
           aria-label="Set lead status"
         >
           {STATUS_OPTIONS.map(o => (
@@ -285,7 +285,7 @@ function DocumentReviewItem({ doc }: { doc: DocumentRow }) {
               <button
                 type="button"
                 onClick={() => setShowReject(s => !s)}
-                className="rounded-[var(--radius-sm)] border border-[var(--destructive)] px-3 py-1.5 text-xs font-medium text-[var(--destructive)] transition-colors hover:bg-[var(--destructive)] hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--destructive)] focus:ring-offset-1"
+                className="rounded-[var(--radius-sm)] border border-[var(--destructive)] px-3 py-1.5 text-xs font-medium text-[var(--destructive)] transition-colors hover:bg-[var(--destructive)] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--destructive)] focus-visible:ring-offset-1"
               >
                 {showReject ? 'Cancel' : 'Reject'}
               </button>
@@ -316,7 +316,7 @@ function DocumentReviewItem({ doc }: { doc: DocumentRow }) {
           <button
             type="submit"
             disabled={pending}
-            className="mb-1 rounded-[var(--radius-sm)] bg-[var(--destructive)] px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-[var(--destructive)] focus:ring-offset-1 disabled:opacity-50"
+            className="mb-1 rounded-[var(--radius-sm)] bg-[var(--destructive)] px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--destructive)] focus-visible:ring-offset-1 disabled:opacity-50"
           >
             {pending ? '…' : 'Confirm reject'}
           </button>
@@ -372,7 +372,7 @@ function DetailPanel({
       onClick={() => setTab(t)}
       className={[
         'flex items-center gap-1.5 border-b-2 pb-2 text-xs font-semibold transition-colors',
-        'focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-1',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-1',
         tab === t
           ? 'border-[var(--accent)] text-[var(--accent)]'
           : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text)]',
@@ -509,7 +509,7 @@ export function LeadCard({
         onClick={() => setOpen(o => !o)}
         aria-expanded={open}
         aria-controls={`lead-detail-${lead.id}`}
-        className="w-full px-5 py-4 text-left focus:outline-none focus:ring-2 focus:ring-inset focus:ring-[var(--accent)]"
+        className="w-full px-5 py-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--accent)]"
       >
         <div className="flex flex-wrap items-start justify-between gap-3">
           {/* Left: student name + ref code + stage */}

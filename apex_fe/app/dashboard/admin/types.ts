@@ -80,10 +80,12 @@ export const INITIAL_OFFBOARD_STATE: OffboardState = { status: 'idle' }
 // ---------------------------------------------------------------------------
 
 export interface PipelineStageRow {
-  stage:                 string
-  label:                 string
-  sort_order:            number
-  stall_threshold_hours: number
+  stage:                      string
+  label:                      string
+  sort_order:                 number
+  stall_threshold_hours:      number
+  escalation_threshold_hours: number  // TASK #8
+  severity_level:             string  // TASK #9
 }
 
 export type SaveFieldState =

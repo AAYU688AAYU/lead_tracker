@@ -27,7 +27,7 @@ export async function getPipelineSettings(): Promise<PipelineStageRow[]> {
 
   const { data, error } = await svcDb
     .from('pipeline_stage_labels')
-    .select('stage, label, sort_order, stall_threshold_hours')
+    .select('stage, label, sort_order, stall_threshold_hours, escalation_threshold_hours, severity_level')
     .order('sort_order', { ascending: true })
 
   if (error) {
@@ -36,10 +36,12 @@ export async function getPipelineSettings(): Promise<PipelineStageRow[]> {
   }
 
   return ((data ?? []) as PipelineStageLabel[]).map(r => ({
-    stage:                 r.stage,
-    label:                 r.label,
-    sort_order:            r.sort_order,
-    stall_threshold_hours: r.stall_threshold_hours,
+    stage:                      r.stage,
+    label:                      r.label,
+    sort_order:                 r.sort_order,
+    stall_threshold_hours:      r.stall_threshold_hours,
+    escalation_threshold_hours: r.escalation_threshold_hours,
+    severity_level:             r.severity_level,
   }))
 }
 
@@ -146,4 +148,93 @@ export async function updateStallThreshold(
   revalidatePath('/dashboard/admin')
 
   return { status: 'saved', field }
+}
+
+
+// ---------------------------------------------------------------------------
+// updateEscalationThreshold — TASK #8/9
+// ---------------------------------------------------------------------------
+
+export async function updateEscalationThreshold(
+  _prev: SaveFieldState,
+  formData: FormData,
+): Promise<SaveFieldState> {
+  const stage = ((formData.get('stage') as string | null) ?? '').trim()
+  const hoursRaw = ((formData.get('escalation_threshold_hours') as string | null) ?? '').trim()
+
+  if (!stage) return { status: 'error', field: `escalation:${stage}`, message: 'Missing stage.' }
+
+  const hours = parseInt(hoursRaw, 10)
+  if (isNaN(hours) || hours < 1) {
+    return { status: 'error', field: `escalation:${stage}`, message: 'Must be at least 1 hour.' }
+  }
+
+  const authDb = await createClient()
+  const svcDb = createServiceClient()
+
+  // Verify admin
+  const adminErr = await assertAdmin()
+  if (adminErr) return { status: 'error', field: `escalation:${stage}`, message: adminErr }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const dbw = svcDb as any
+
+  const { error } = await dbw
+    .from('pipeline_stage_labels')
+    .update({ escalation_threshold_hours: hours })
+    .eq('stage', stage)
+
+  if (error) {
+    console.error('[pipeline-settings] updateEscalationThreshold error:', error)
+    return { status: 'error', field: `escalation:${stage}`, message: 'Update failed.' }
+  }
+
+  // Revalidate consumers
+  revalidatePath('/dashboard/admin/pipeline-settings')
+  revalidatePath('/dashboard/admin')
+
+  return { status: 'saved', field: `escalation:${stage}` }
+}
+
+// ---------------------------------------------------------------------------
+// updateSeverityLevel — TASK #9
+// ---------------------------------------------------------------------------
+
+export async function updateSeverityLevel(
+  _prev: SaveFieldState,
+  formData: FormData,
+): Promise<SaveFieldState> {
+  const stage = ((formData.get('stage') as string | null) ?? '').trim()
+  const level = ((formData.get('severity_level') as string | null) ?? '').trim()
+
+  if (!stage) return { status: 'error', field: `severity:${stage}`, message: 'Missing stage.' }
+  if (!['CRITICAL', 'HIGH', 'MEDIUM', 'NONE'].includes(level)) {
+    return { status: 'error', field: `severity:${stage}`, message: 'Invalid severity level.' }
+  }
+
+  const authDb = await createClient()
+  const svcDb = createServiceClient()
+
+  // Verify admin
+  const adminErr = await assertAdmin()
+  if (adminErr) return { status: 'error', field: `severity:${stage}`, message: adminErr }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const dbw = svcDb as any
+
+  const { error } = await dbw
+    .from('pipeline_stage_labels')
+    .update({ severity_level: level })
+    .eq('stage', stage)
+
+  if (error) {
+    console.error('[pipeline-settings] updateSeverityLevel error:', error)
+    return { status: 'error', field: `severity:${stage}`, message: 'Update failed.' }
+  }
+
+  // Revalidate consumers
+  revalidatePath('/dashboard/admin/pipeline-settings')
+  revalidatePath('/dashboard/admin')
+
+  return { status: 'saved', field: `severity:${stage}` }
 }

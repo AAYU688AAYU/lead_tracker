@@ -39,15 +39,28 @@ import {
   createContext,
   useContext,
   useCallback,
+  lazy,
+  Suspense,
+  useEffect,
 } from 'react'
 import { advanceStageKanban, getLeadCardData } from './actions'
 import type { ConsultantLeadDetail } from './types'
 import type { StageStep } from '@/app/status/actions'
-import { LeadDetailDrawer } from '@/app/components/lead-drawer'
-import {
-  useLeadsRealtime,
-  useDocumentsRealtime,
-} from '@/lib/hooks/use-leads-realtime'
+import { LeadContextMenu } from '@/app/components/lead-context-menu'
+import { KeyboardHelpModal } from '@/app/components/keyboard-help-modal'
+import { ToastContainer } from '@/app/components/toast'
+import { useToast } from '@/lib/hooks/use-toast'
+import { useStallCountdown } from '@/lib/hooks/use-stall-countdown'
+import { useLiveDays } from '@/lib/hooks/use-live-days'
+import { useKeyboardShortcuts } from '@/lib/hooks/use-keyboard-shortcuts'
+import { useCRMRealtime } from '@/lib/hooks/use-crm-realtime'
+
+// Lazy-load the drawer component for better initial page load performance
+const LeadDetailDrawer = lazy(() =>
+  import('@/app/components/lead-drawer').then(mod => ({
+    default: mod.LeadDetailDrawer,
+  }))
+)
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -102,19 +115,63 @@ function KanbanCard({
   lead,
   stages,
   onTap,
+  stageThreshold,
 }: {
-  lead:   ConsultantLeadDetail
-  stages: StageStep[]
-  onTap?: (lead: ConsultantLeadDetail) => void
+  lead:            ConsultantLeadDetail
+  stages:          StageStep[]
+  onTap?:          (lead: ConsultantLeadDetail) => void
+  stageThreshold?: number
 }) {
   const { draggedLead, onDragStart, onDragEnd } = useContext(DragContext)
-
-  const days       = daysInStage(lead.stage_entered_at)
+  const { displayText, isWarning } = useStallCountdown(
+    lead,
+    stageThreshold,
+  )
+  const days = useLiveDays(lead.stage_entered_at)
   const isStalled  = lead.status === 'stalled'
   const isLast     = stageIndex(stages, lead.stage) === stages.length - 1
   const isDragging = draggedLead?.id === lead.id
 
-  return (
+  // Context menu actions (only for stalled leads)
+  const contextActions = isStalled
+    ? [
+        {
+          label: 'Contact student',
+          onClick: () => {
+            window.location.href = `mailto:${lead.student_email}`
+          },
+          icon: (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+              <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+              <polyline points="22,6 12,13 2,6" />
+            </svg>
+          ),
+        },
+        {
+          label: 'View details',
+          onClick: () => onTap?.(lead),
+          icon: (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+              <circle cx="12" cy="12" r="3" />
+            </svg>
+          ),
+        },
+      ]
+    : [
+        {
+          label: 'View details',
+          onClick: () => onTap?.(lead),
+          icon: (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+              <circle cx="12" cy="12" r="3" />
+            </svg>
+          ),
+        },
+      ]
+
+  const cardContent = (
     <div
       draggable={!isLast}
       onDragStart={e => {
@@ -136,7 +193,7 @@ function KanbanCard({
       }}
       className={[
         'rounded-[var(--radius-md)] border bg-white px-3 py-3 text-left w-full',
-        'focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-1',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-1',
         isLast
           ? 'cursor-default'
           : 'select-none cursor-grab active:cursor-grabbing',
@@ -155,14 +212,30 @@ function KanbanCard({
           {lead.program_name}
         </p>
       )}
-      {/* Line 2: days in stage + stalled pip */}
+      {/* Line 2: days in stage + countdown + stalled pip */}
       <div className="mt-2 flex items-center gap-2 flex-wrap">
         <span className="text-[11px] text-[var(--text-muted)]">
           {days}d in stage
         </span>
+        {!isStalled && isWarning && (
+          <span className={`text-[11px] font-medium ${
+            displayText.includes('Stalling now')
+              ? 'text-[var(--stalled)] animate-pulse'
+              : 'text-orange-600'
+          }`}>
+            {displayText}
+          </span>
+        )}
         {isStalled && <StalledPip />}
       </div>
     </div>
+  )
+
+  return (
+    <LeadContextMenu
+      actions={contextActions}
+      trigger={cardContent}
+    />
   )
 }
 
@@ -242,9 +315,18 @@ function KanbanColumn({
           </p>
         ) : (
           <div className="space-y-2">
-            {leads.map(lead => (
-              <KanbanCard key={lead.id} lead={lead} stages={allStages} onTap={onTap} />
-            ))}
+            {leads.map(lead => {
+              const stageConfig = allStages.find(s => s.stage === lead.stage)
+              return (
+                <KanbanCard
+                  key={lead.id}
+                  lead={lead}
+                  stages={allStages}
+                  onTap={onTap}
+                  stageThreshold={stageConfig?.stall_threshold_hours}
+                />
+              )
+            })}
           </div>
         )}
       </div>
@@ -293,7 +375,7 @@ function MobileStageList({
               className={[
                 'flex shrink-0 items-center gap-1.5 rounded-[var(--radius-sm)] px-3 py-1.5',
                 'text-xs font-medium whitespace-nowrap',
-                'focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-1',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-1',
                 active
                   ? 'bg-[var(--accent)] text-white'
                   : 'border border-[var(--border)] bg-white text-[var(--text-muted)] hover:border-[var(--accent)] hover:text-[var(--accent)]',
@@ -326,15 +408,20 @@ function MobileStageList({
         ) : (
           <div className="space-y-2">
             {visible.map(lead => {
-              const days      = daysInStage(lead.stage_entered_at)
-              const isStalled = lead.status === 'stalled'
+              const days           = useLiveDays(lead.stage_entered_at)
+              const isStalled      = lead.status === 'stalled'
+              const stageConfig    = stages.find(s => s.stage === lead.stage)
+              const { displayText, isWarning } = useStallCountdown(
+                lead,
+                stageConfig?.stall_threshold_hours,
+              )
               return (
                 <button
                   key={lead.id}
                   type="button"
                   onClick={() => onTap(lead)}
                   aria-label={`Open ${lead.student_name}${lead.program_name ? ', ' + lead.program_name : ''}`}
-                  className="w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-white px-4 py-3 text-left transition-colors hover:border-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-1"
+                  className="w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-white px-4 py-3 text-left transition-colors hover:border-[var(--accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-1"
                 >
                   <p className="text-sm font-medium text-[var(--text)] truncate">
                     {lead.student_name}
@@ -344,8 +431,17 @@ function MobileStageList({
                       </span>
                     )}
                   </p>
-                  <div className="mt-1 flex items-center gap-2">
+                  <div className="mt-1 flex items-center gap-2 flex-wrap">
                     <span className="text-xs text-[var(--text-muted)]">{days}d in stage</span>
+                    {!isStalled && isWarning && (
+                      <span className={`text-[11px] font-medium ${
+                        displayText.includes('Stalling now')
+                          ? 'text-[var(--stalled)] animate-pulse'
+                          : 'text-orange-600'
+                      }`}>
+                        {displayText}
+                      </span>
+                    )}
                     {isStalled && <StalledPip />}
                   </div>
                 </button>
@@ -376,6 +472,12 @@ export function KanbanBoard({
   const [draggedLead, setDraggedLead] = useState<ConsultantLeadDetail | null>(null)
   const [, startTransition]           = useTransition()
   const snapshot                      = useRef<ConsultantLeadDetail[]>(initialLeads)
+  
+  // Toast for drag-drop errors
+  const { toast, showToast, dismissToast } = useToast()
+  
+  // Keyboard shortcuts
+  const { showHelp, closeHelp } = useKeyboardShortcuts()
 
   // Phase 5 — drawer state
   const [drawerLeadId, setDrawerLeadId] = useState<string | null>(null)
@@ -424,97 +526,19 @@ export function KanbanBoard({
     })
   }
 
-  // ── Phase 7: leads Realtime subscription ──────────────────────────────
-  useLeadsRealtime(
-    {
-      filter:        `consultant_id=eq.${consultantId}`,
-      channelSuffix: consultantId,
-    },
-    useCallback((payload) => {
-      const eventType = payload.eventType
+  // ── Phase 8: consolidated realtime subscription via provider ────────────
+  // Instead of N subscriptions (leads, documents), use the centralized
+  // RealtimeProvider's useCRMRealtime hook which maintains a single connection.
+  const { leads: realtimeLeads, stalledLeadIds: stalled } = useCRMRealtime()
 
-      if (eventType === 'DELETE') {
-        const oldId = (payload.old as { id?: string })?.id
-        if (oldId) setLeads(prev => prev.filter(l => l.id !== oldId))
-        return
-      }
+  // Sync realtime leads into local state for kanban interaction
+  useEffect(() => {
+    // Update our leads whenever realtime state changes
+    setLeads(realtimeLeads)
+  }, [realtimeLeads])
 
-      // INSERT or UPDATE — re-fetch the full denormalized card.
-      const newRow = payload.new as { id?: string }
-      const leadId = newRow?.id
-      if (!leadId) return
-
-      // Debounce: skip if a fetch is already in flight for this lead.
-      if (pendingRefresh.current.has(leadId)) return
-      pendingRefresh.current.add(leadId)
-
-      startTransition(async () => {
-        try {
-          const fresh = await getLeadCardData(leadId)
-          if (fresh) {
-            applyLeadRefresh(fresh)
-          } else if (eventType === 'UPDATE') {
-            // Lead is no longer accessible (re-assigned away from this consultant).
-            setLeads(prev => prev.filter(l => l.id !== leadId))
-          }
-        } finally {
-          pendingRefresh.current.delete(leadId)
-        }
-      })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [consultantId]),
-  )
-
-  // ── Phase 7: documents Realtime subscription ──────────────────────────
-  // Lead-level document changes (approve / reject) are handled with a
-  // targeted patch so the card's document list stays current.
-  const leadIds = leads.map(l => l.id)
-
-  useDocumentsRealtime(
-    {
-      // Supabase Realtime filter supports `lead_id=in.(...)` syntax but has
-      // a row-count cap; for large sets we fall back to filtering client-side.
-      channelSuffix: `consultant-docs-${consultantId}`,
-    },
-    useCallback((payload) => {
-      if (payload.eventType === 'DELETE') return // docs are never deleted in the schema
-
-      const doc = payload.new as {
-        id?: string; lead_id?: string; status?: string
-        file_name?: string; file_url?: string
-        rejection_reason?: string | null; created_at?: string
-      }
-      if (!doc.lead_id || !leadIds.includes(doc.lead_id)) return
-
-      setLeads(prev => prev.map(lead => {
-        if (lead.id !== doc.lead_id) return lead
-
-        const existingIdx = lead.documents.findIndex(d => d.id === doc.id)
-        if (existingIdx === -1) {
-          // New document uploaded — prepend.
-          const newDoc = {
-            id:               doc.id ?? '',
-            file_name:        doc.file_name ?? '',
-            file_url:         doc.file_url ?? '',
-            status:           (doc.status ?? 'pending') as 'pending' | 'approved' | 'rejected',
-            rejection_reason: doc.rejection_reason ?? null,
-            created_at:       doc.created_at ?? new Date().toISOString(),
-          }
-          return { ...lead, documents: [newDoc, ...lead.documents] }
-        }
-
-        // Existing doc updated (status change).
-        const nextDocs = [...lead.documents]
-        nextDocs[existingIdx] = {
-          ...nextDocs[existingIdx],
-          status:           (doc.status ?? nextDocs[existingIdx].status) as 'pending' | 'approved' | 'rejected',
-          rejection_reason: doc.rejection_reason ?? null,
-        }
-        return { ...lead, documents: nextDocs }
-      }))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [leadIds.join(',')]),
-  )
+  // Stalled leads tracking for visual indicators
+  const stalledLeadIds = Array.from(stalled)
 
   // ── Drag-drop handlers (unchanged from Phase 5) ───────────────────────
 
@@ -551,7 +575,13 @@ export function KanbanBoard({
       fd.set('from_stage', fromStage)
       fd.set('to_stage',   toStage)
       const result = await advanceStageKanban({ status: 'idle' }, fd)
-      if (result.status === 'error') setLeads(snapshot.current)
+      if (result.status === 'error') {
+        setLeads(snapshot.current)
+        showToast({
+          type: 'error',
+          message: result.message || 'Failed to advance lead. Please try again.',
+        })
+      }
     })
   }
 
@@ -562,6 +592,9 @@ export function KanbanBoard({
 
   return (
     <>
+      <ToastContainer toast={toast} onDismiss={dismissToast} />
+      <KeyboardHelpModal isOpen={showHelp} onClose={closeHelp} />
+
       <DragContext.Provider value={{ draggedLead, onDragStart: handleDragStart, onDragEnd: handleDragEnd }}>
         {/* Desktop Kanban */}
         <div
@@ -587,14 +620,17 @@ export function KanbanBoard({
       </DragContext.Provider>
 
       {/* Phase 5 — Lead detail drawer (consultant, no reassign) */}
-      <LeadDetailDrawer
-        isOpen={drawerOpen}
-        leadId={drawerLeadId}
-        role="consultant"
-        dashboard="consultant"
-        onClose={handleCloseDrawer}
-        onStageAdvanced={handleDrawerStageAdvanced}
-      />
+      {/* Lazy-loaded for better initial page load performance */}
+      <Suspense fallback={null}>
+        <LeadDetailDrawer
+          isOpen={drawerOpen}
+          leadId={drawerLeadId}
+          role="consultant"
+          dashboard="consultant"
+          onClose={handleCloseDrawer}
+          onStageAdvanced={handleDrawerStageAdvanced}
+        />
+      </Suspense>
     </>
   )
 }

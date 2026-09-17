@@ -245,3 +245,133 @@ export async function offboardConsultant(
   revalidatePath('/dashboard/admin')
   return { status: 'success', moved: leads.length }
 }
+
+
+// ---------------------------------------------------------------------------
+// deactivateConsultant — TASK #6
+// Marks consultant as inactive, flags all their leads for reassignment
+// ---------------------------------------------------------------------------
+
+export async function deactivateConsultant(
+  _prev: OffboardState,
+  formData: FormData,
+): Promise<OffboardState> {
+  const consultant_id = ((formData.get('consultant_id') as string | null) ?? '').trim()
+
+  if (!consultant_id) return { status: 'error', message: 'Missing consultant.' }
+
+  const authDb = await createClient()
+  const svcDb = createServiceClient()
+
+  // Verify caller is admin
+  const { data: { user } } = await authDb.auth.getUser()
+  if (!user) return { status: 'error', message: 'Not authenticated.' }
+
+  const { data: callerProfile } = await authDb
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single()
+
+  if ((callerProfile as { role: string } | null)?.role !== 'admin') {
+    return { status: 'error', message: 'Admin access required.' }
+  }
+
+  // Fetch consultant profile
+  const { data: consultantRow } = await svcDb
+    .from('profiles')
+    .select('full_name, email')
+    .eq('id', consultant_id)
+    .single()
+
+  const consultantName =
+    (consultantRow as { full_name?: string; email?: string } | null)?.full_name ||
+    (consultantRow as { full_name?: string; email?: string } | null)?.email ||
+    'Unknown'
+
+  // Mark consultant as inactive
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const dbw = svcDb as any
+
+  const { error: deactivateErr } = await dbw
+    .from('profiles')
+    .update({ is_active: false })
+    .eq('id', consultant_id)
+
+  if (deactivateErr) {
+    console.error('[team] deactivateConsultant error:', deactivateErr)
+    return { status: 'error', message: 'Could not deactivate consultant. Please try again.' }
+  }
+
+  // Fetch all active/stalled leads for this consultant
+  const { data: leadRows } = await dbw
+    .from('leads')
+    .select('id, reference_code, stage')
+    .eq('consultant_id', consultant_id)
+    .in('status', ['active', 'stalled'])
+
+  type FlaggedLead = { id: string; reference_code: string; stage: string }
+  const leads = (leadRows ?? []) as FlaggedLead[]
+
+  if (leads.length === 0) {
+    revalidatePath('/dashboard/admin/team')
+    return { status: 'success', moved: 0 }
+  }
+
+  // Clear consultant_id for all their active/stalled leads (flag for reassignment)
+  const { error: clearErr } = await dbw
+    .from('leads')
+    .update({ consultant_id: null })
+    .eq('consultant_id', consultant_id)
+    .in('status', ['active', 'stalled'])
+
+  if (clearErr) {
+    console.error('[team] deactivateConsultant clear leads error:', clearErr)
+    return { status: 'error', message: 'Could not flag leads for reassignment. Please try again.' }
+  }
+
+  // Write activity_logs for each flagged lead
+  const activityRows = leads.map(l => ({
+    lead_id: l.id,
+    actor_id: user.id,
+    type: 'deactivation',
+    content: `Lead flagged for reassignment due to consultant deactivation (${consultantName}).`,
+  }))
+
+  const { error: actErr } = await dbw
+    .from('activity_logs')
+    .insert(activityRows)
+
+  if (actErr) {
+    console.error('[team] deactivateConsultant activity logs error:', actErr)
+  }
+
+  // Notify all super-admins
+  const { data: superAdmins } = await svcDb
+    .from('profiles')
+    .select('id')
+    .eq('role', 'super_admin')
+
+  const notificationRows = (superAdmins ?? []).map(
+    (admin: { id: string }) => ({
+      user_id: admin.id,
+      type: 'deactivation',
+      content: `${consultantName} has been deactivated. ${leads.length} lead${leads.length === 1 ? '' : 's'} flagged for reassignment.`,
+      is_read: false,
+    })
+  )
+
+  if (notificationRows.length > 0) {
+    const { error: notifErr } = await dbw
+      .from('notifications')
+      .insert(notificationRows)
+
+    if (notifErr) {
+      console.error('[team] deactivateConsultant notification error:', notifErr)
+    }
+  }
+
+  revalidatePath('/dashboard/admin/team')
+  revalidatePath('/dashboard/admin')
+  return { status: 'success', moved: leads.length }
+}

@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation'
+import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
 import { signOut } from '@/app/(auth)/login/actions'
 import { getStudentDashboardData } from './actions'
@@ -9,6 +10,44 @@ type ProfileRow = {
   full_name: string | null
   email:     string | null
   role:      UserRole
+}
+
+export async function generateMetadata(): Promise<Metadata> {
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    
+    if (!user) {
+      return {
+        title: 'Student Dashboard — Apex CRM',
+        description: 'Track your applications',
+      }
+    }
+
+    const { data: profileData } = await supabase
+      .from('profiles')
+      .select('full_name, email, role')
+      .eq('id', user.id)
+      .single()
+
+    const profile = profileData as ProfileRow | null
+    const displayName = profile?.full_name ?? profile?.email ?? 'Student'
+
+    return {
+      title: `${displayName} — Student Dashboard — Apex CRM`,
+      description: 'Track your applications and stay updated on your admission process.',
+      openGraph: {
+        title: `${displayName}'s Applications — Apex CRM`,
+        description: 'Application tracking made simple',
+        type: 'website',
+      },
+    }
+  } catch (error) {
+    return {
+      title: 'Student Dashboard — Apex CRM',
+      description: 'Track your applications',
+    }
+  }
 }
 
 export default async function StudentDashboard() {
@@ -50,7 +89,7 @@ export default async function StudentDashboard() {
           <form action={signOut}>
             <button
               type="submit"
-              className="text-sm text-[var(--text-muted)] underline-offset-2 hover:text-[var(--text)] hover:underline focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-2"
+              className="text-sm text-[var(--text-muted)] underline-offset-2 hover:text-[var(--text)] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2"
             >
               Sign out
             </button>

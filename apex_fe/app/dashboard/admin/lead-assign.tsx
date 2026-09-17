@@ -24,15 +24,13 @@
  */
 
 import {
-  useActionState,
   useState,
   useCallback,
   useTransition,
   useRef,
 } from 'react'
-import { assignConsultant, getAdminLeadRow } from './actions'
-import type { AssignState, AdminLeadRow, ConsultantOption } from './types'
-import { INITIAL_ASSIGN_STATE } from './types'
+import { getAdminLeadRow } from './actions'
+import type { AdminLeadRow, ConsultantOption } from './types'
 import type { StageStep } from '@/app/status/actions'
 import { MiniStepper } from '@/app/components/lead-detail'
 import { LeadDetailDrawer } from '@/app/components/lead-drawer'
@@ -49,8 +47,8 @@ import {
 const btnOutline =
   'rounded-[var(--radius-sm)] border border-[var(--border)] bg-white px-2.5 py-1 text-xs ' +
   'font-medium text-[var(--text-muted)] transition-colors hover:border-[var(--accent)] ' +
-  'hover:text-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] ' +
-  'focus:ring-offset-1 disabled:opacity-50'
+  'hover:text-[var(--accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] ' +
+  'focus-visible:ring-offset-1 disabled:opacity-50'
 
 // ---------------------------------------------------------------------------
 // Status badge
@@ -71,90 +69,33 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 // ---------------------------------------------------------------------------
-// AssignForm — single lead's consultant selector
+// TIER 2 #7: Consolidated reassign — removed inline form, now uses drawer only
+// This component now just displays the consultant name and a "Reassign" button
+// that opens the lead detail drawer (which handles reassignment)
 // ---------------------------------------------------------------------------
 
-function AssignForm({
+function ConsultantDisplay({
   lead,
-  consultants,
-  onAssigned,
+  onOpenDrawer,
 }: {
-  lead:        AdminLeadRow
-  consultants: ConsultantOption[]
-  onAssigned:  (leadId: string, consultantId: string | null, consultantName: string | null) => void
+  lead:           AdminLeadRow
+  onOpenDrawer:   (leadId: string) => void
 }) {
-  const [state, action, pending] = useActionState<AssignState, FormData>(
-    assignConsultant,
-    INITIAL_ASSIGN_STATE,
-  )
-  const [editing, setEditing] = useState(false)
-
-  if (state.status === 'success' && editing) {
-    onAssigned(lead.id, state.consultant_id, state.consultant_name)
-    setEditing(false)
-  }
-
-  if (!editing) {
-    return (
-      <div className="flex items-center gap-2">
-        <span className="text-sm text-[var(--text)]">
-          {lead.consultant_name ?? (
-            <span className="text-[var(--text-muted)]">Unassigned</span>
-          )}
-        </span>
-        <button type="button" onClick={() => setEditing(true)} className={btnOutline}>
-          {lead.consultant_name ? 'Reassign' : 'Assign'}
-        </button>
-      </div>
-    )
-  }
-
   return (
-    <form action={action} className="flex items-center gap-2">
-      <input type="hidden" name="lead_id" value={lead.id} />
-
-      <select
-        name="consultant_id"
-        defaultValue={lead.consultant_id ?? ''}
-        disabled={pending}
-        className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-white px-2 py-1.5 text-xs text-[var(--text)] focus:border-[var(--accent)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)] disabled:opacity-50"
-        aria-label="Select consultant"
-      >
-        <option value="">— Unassigned —</option>
-        {consultants.map(c => {
-          const atCap = c.max_lead_capacity != null && c.open_leads >= c.max_lead_capacity
-          return (
-            <option key={c.id} value={c.id} disabled={atCap && c.id !== lead.consultant_id}>
-              {c.name}
-              {atCap ? ' (at capacity)' : ''}
-              {!c.is_accepting_leads ? ' (not accepting)' : ''}
-              {` · ${c.open_leads} open`}
-            </option>
-          )
-        })}
-      </select>
-
-      <button
-        type="submit"
-        disabled={pending}
-        className="rounded-[var(--radius-sm)] bg-[var(--accent)] px-2.5 py-1.5 text-xs font-semibold text-white transition-colors hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-1 disabled:opacity-50"
-      >
-        {pending ? '…' : 'Save'}
-      </button>
-
+    <div className="flex items-center gap-2">
+      <span className="text-sm text-[var(--text)]">
+        {lead.consultant_name ?? (
+          <span className="text-[var(--text-muted)]">Unassigned</span>
+        )}
+      </span>
       <button
         type="button"
-        onClick={() => setEditing(false)}
-        disabled={pending}
+        onClick={() => onOpenDrawer(lead.id)}
         className={btnOutline}
       >
-        Cancel
+        {lead.consultant_name ? 'Reassign…' : 'Assign…'}
       </button>
-
-      {state.status === 'error' && (
-        <span role="alert" className="text-xs text-[var(--destructive)]">{state.message}</span>
-      )}
-    </form>
+    </div>
   )
 }
 
@@ -203,11 +144,8 @@ export function LeadAssignList({
     consultantId: string | null,
     consultantName: string | null,
   ) {
-    setLeads(prev => prev.map(l =>
-      l.id === leadId
-        ? { ...l, consultant_id: consultantId, consultant_name: consultantName }
-        : l
-    ))
+    // No longer needed — reassignment handled via drawer
+    // Realtime updates will handle updating the UI when drawer closes
   }
 
   // ── Phase 7: leads Realtime subscription (unfiltered — admin sees all) ──
@@ -295,14 +233,14 @@ export function LeadAssignList({
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Search student or ref code…"
-            className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-white px-3 py-1.5 text-sm text-[var(--text)] placeholder-[var(--text-muted)] focus:border-[var(--accent)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)] w-56"
+            className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-white px-3 py-1.5 text-sm text-[var(--text)] placeholder-[var(--text-muted)] focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)] w-56"
           />
 
           {/* Stage filter */}
           <select
             value={stageFilter}
             onChange={e => setStageFilter(e.target.value)}
-            className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-white px-2 py-1.5 text-xs text-[var(--text)] focus:border-[var(--accent)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
+            className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-white px-2 py-1.5 text-xs text-[var(--text)] focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)]"
             aria-label="Filter by stage"
           >
             <option value="all">All stages</option>
@@ -313,7 +251,7 @@ export function LeadAssignList({
           <select
             value={statusFilter}
             onChange={e => setStatusFilter(e.target.value)}
-            className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-white px-2 py-1.5 text-xs text-[var(--text)] focus:border-[var(--accent)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
+            className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-white px-2 py-1.5 text-xs text-[var(--text)] focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)]"
             aria-label="Filter by status"
           >
             <option value="all">All statuses</option>
@@ -327,7 +265,7 @@ export function LeadAssignList({
           <select
             value={assignedFilter}
             onChange={e => setAssignedFilter(e.target.value)}
-            className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-white px-2 py-1.5 text-xs text-[var(--text)] focus:border-[var(--accent)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
+            className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-white px-2 py-1.5 text-xs text-[var(--text)] focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)]"
             aria-label="Filter by assignment"
           >
             <option value="all">All leads</option>
@@ -405,10 +343,9 @@ export function LeadAssignList({
 
                     {/* Consultant assign */}
                     <td className="px-4 py-3">
-                      <AssignForm
+                      <ConsultantDisplay
                         lead={lead}
-                        consultants={consultants}
-                        onAssigned={handleAssigned}
+                        onOpenDrawer={handleOpenDrawer}
                       />
                     </td>
 
@@ -418,7 +355,7 @@ export function LeadAssignList({
                         type="button"
                         onClick={() => handleOpenDrawer(lead.id)}
                         aria-label={`Open details for ${lead.student_name}`}
-                        className="rounded-[var(--radius-sm)] p-1.5 text-[var(--text-muted)] opacity-0 transition-opacity group-hover:opacity-100 hover:text-[var(--accent)] focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-1"
+                        className="rounded-[var(--radius-sm)] p-1.5 text-[var(--text-muted)] opacity-0 transition-opacity group-hover:opacity-100 hover:text-[var(--accent)] focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-1"
                       >
                         <svg
                           aria-hidden

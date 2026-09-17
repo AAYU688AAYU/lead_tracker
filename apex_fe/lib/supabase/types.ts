@@ -11,10 +11,11 @@
 // Enums
 // ---------------------------------------------------------------------------
 
-export type UserRole       = 'student' | 'consultant' | 'admin'
-export type LeadStage      = 'inquiry' | 'consultation' | 'documents' | 'application' | 'decision' | 'enrolled'
-export type LeadStatus     = 'active'  | 'stalled'     | 'completed' | 'dropped'
-export type DocumentStatus = 'pending' | 'approved'    | 'rejected'
+export type UserRole           = 'student' | 'consultant' | 'admin'
+export type LeadStage          = 'inquiry' | 'consultation' | 'documents' | 'application' | 'decision' | 'enrolled'
+export type LeadStatus         = 'active'  | 'stalled'     | 'completed' | 'dropped'
+export type DocumentStatus     = 'pending' | 'approved'    | 'rejected'
+export type NotificationType   = 'lead_assigned' | 'lead_stalled' | 'stall_resolved' | 'lead_reassigned' | 'stage_advanced' | 'document_reviewed' | 'admin_message' | 'team_update'
 
 // ---------------------------------------------------------------------------
 // Row types — one interface per table, columns match schema exactly
@@ -65,10 +66,12 @@ export interface Lead {
 }
 
 export interface PipelineStageLabel {
-  stage:                 LeadStage
-  label:                 string
-  sort_order:            number   // 1–6, determines display order
-  stall_threshold_hours: number
+  stage:                    LeadStage
+  label:                    string
+  sort_order:               number   // 1–6, determines display order
+  stall_threshold_hours:    number
+  escalation_threshold_hours: number  // Hours after stall_threshold to escalate
+  severity_level:           string   // CRITICAL | HIGH | MEDIUM | NONE
 }
 
 export interface Document {
@@ -103,7 +106,7 @@ export interface CommunicationLog {
 export interface Notification {
   id:         string
   user_id:    string
-  type:       string
+  type:       NotificationType
   content:    string
   is_read:    boolean
   created_at: string
@@ -197,10 +200,11 @@ export interface Database {
       Returns: unknown
     }>
     Enums: {
-      user_role:       UserRole
-      lead_stage:      LeadStage
-      lead_status:     LeadStatus
-      document_status: DocumentStatus
+      user_role:          UserRole
+      lead_stage:         LeadStage
+      lead_status:        LeadStatus
+      document_status:    DocumentStatus
+      notification_type:  NotificationType
     }
   }
 }

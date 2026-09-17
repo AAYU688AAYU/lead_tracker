@@ -1,17 +1,22 @@
 'use client'
 
+import React from 'react'
+
 /**
  * TeamTable — client component for /dashboard/admin/team
  *
  * Responsibilities:
  *  - Render the consultant table with all computed stats
+ *  - Clickable row to navigate to consultant detail view (TASK #5)
  *  - is_accepting_leads toggle (optimistic, useActionState)
  *  - Per-row "Offboard" button that opens an inline confirmation panel
  *    where the admin picks a replacement consultant and confirms
  */
 
+import Link from 'next/link'
 import { useActionState, useState, useCallback } from 'react'
 import { toggleAccepting, offboardConsultant } from './actions'
+import { DeactivateModal } from './deactivate-modal'
 import type {
   TeamConsultantRow,
   ToggleAcceptingState,
@@ -25,7 +30,7 @@ import { INITIAL_TOGGLE_STATE, INITIAL_OFFBOARD_STATE } from '../types'
 
 const btnBase =
   'rounded-[var(--radius-sm)] px-2.5 py-1 text-xs font-medium transition-colors ' +
-  'focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-1 disabled:opacity-50'
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-1 disabled:opacity-50'
 
 const btnOutline =
   btnBase +
@@ -86,7 +91,7 @@ function ToggleForm({
         aria-label={displayed ? 'Accepting leads — click to stop' : 'Not accepting — click to enable'}
         className={[
           'relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors',
-          'focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-2',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2',
           'disabled:opacity-50',
           displayed ? 'bg-[var(--accent)]' : 'bg-[var(--border)]',
         ].join(' ')}
@@ -148,7 +153,7 @@ function OffboardPanel({
         required
         disabled={pending}
         defaultValue=""
-        className="w-full rounded-[var(--radius-sm)] border border-[var(--border)] bg-white px-3 py-2 text-sm text-[var(--text)] focus:border-[var(--accent)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)] disabled:opacity-50"
+        className="w-full rounded-[var(--radius-sm)] border border-[var(--border)] bg-white px-3 py-2 text-sm text-[var(--text)] focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)] disabled:opacity-50"
         aria-label="Select replacement consultant"
       >
         <option value="" disabled>— Select replacement consultant —</option>
@@ -186,6 +191,7 @@ export function TeamTable({ initialConsultants }: { initialConsultants: TeamCons
   const [consultants, setConsultants] = useState<TeamConsultantRow[]>(initialConsultants)
   const [offboardingId, setOffboardingId] = useState<string | null>(null)
   const [offboardMsg,   setOffboardMsg]   = useState<string | null>(null)
+  const [deactivatingId, setDeactivatingId] = useState<string | null>(null)
 
   const handleToggled = useCallback((id: string, val: boolean) => {
     setConsultants(prev =>
@@ -223,7 +229,7 @@ export function TeamTable({ initialConsultants }: { initialConsultants: TeamCons
           <button
             type="button"
             onClick={() => setOffboardMsg(null)}
-            className="ml-3 text-xs underline underline-offset-2 hover:no-underline focus:outline-none"
+            className="ml-3 text-xs underline underline-offset-2 hover:no-underline focus-visible:outline-none"
             aria-label="Dismiss"
           >
             Dismiss
@@ -256,17 +262,21 @@ export function TeamTable({ initialConsultants }: { initialConsultants: TeamCons
                 const atCapacity    = c.max_lead_capacity != null && openLeads >= c.max_lead_capacity
 
                 return (
-                  <>
+                  <React.Fragment key={c.id}>
                     <tr
-                      key={c.id}
                       className={[
-                        'hover:bg-[var(--background)]',
+                        'cursor-pointer hover:bg-[var(--background)]',
                         isOffboarding ? 'bg-[var(--background)]' : '',
                       ].join(' ')}
                     >
                       {/* Name */}
                       <td className="px-4 py-3 font-medium text-[var(--text)]">
-                        {c.full_name}
+                        <Link
+                          href={`/dashboard/admin/consultants/${c.id}`}
+                          className="text-[var(--accent)] hover:underline"
+                        >
+                          {c.full_name}
+                        </Link>
                       </td>
 
                       {/* Email */}
@@ -311,19 +321,29 @@ export function TeamTable({ initialConsultants }: { initialConsultants: TeamCons
                       </td>
 
                       {/* Offboard action */}
-                      <td className="px-4 py-3 text-right">
+                      <td className="px-4 py-3 text-right flex items-center justify-end gap-2">
                         {isOffboarding ? null : (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setOffboardMsg(null)
-                              setOffboardingId(c.id)
-                            }}
-                            className={btnDestructive}
-                            aria-label={`Offboard ${c.full_name}`}
-                          >
-                            Offboard
-                          </button>
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setOffboardMsg(null)
+                                setOffboardingId(c.id)
+                              }}
+                              className={btnDestructive}
+                              aria-label={`Offboard ${c.full_name}`}
+                            >
+                              Offboard
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setDeactivatingId(c.id)}
+                              className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-white px-2.5 py-1 text-xs font-medium text-[var(--text-muted)] transition-colors hover:border-[var(--destructive)] hover:text-[var(--destructive)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--destructive)] focus-visible:ring-offset-1 disabled:opacity-50"
+                              aria-label={`Deactivate ${c.full_name}`}
+                            >
+                              Deactivate
+                            </button>
+                          </>
                         )}
                       </td>
                     </tr>
@@ -349,12 +369,21 @@ export function TeamTable({ initialConsultants }: { initialConsultants: TeamCons
                         </td>
                       </tr>
                     )}
-                  </>
+                  </React.Fragment>
                 )
               })}
             </tbody>
           </table>
         </div>
+      )}
+
+      {/* Deactivate Modal */}
+      {deactivatingId && (
+        <DeactivateModal
+          consultant={consultants.find(c => c.id === deactivatingId)!}
+          isOpen={true}
+          onClose={() => setDeactivatingId(null)}
+        />
       )}
     </div>
   )

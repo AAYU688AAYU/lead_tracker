@@ -40,7 +40,7 @@ export interface ConsultantLeadDetail {
 }
 
 export interface ConsultantDashboardData {
-  stages: import('@/app/status/actions').StageStep[]
+  stages: (import('@/app/status/actions').StageStep & { stall_threshold_hours?: number })[]
   leads:  ConsultantLeadDetail[]
   /** Unread notification count for the bell icon */
   unread_notifications: number

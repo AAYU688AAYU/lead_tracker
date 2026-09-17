@@ -220,3 +220,96 @@ export async function getAdminLeadRow(leadId: string): Promise<AdminLeadRow | nu
     consultant_name: consultant?.full_name ?? consultant?.email ?? null,
   }
 }
+
+// ---------------------------------------------------------------------------
+// getEscalatedStalls — TASK #2
+// Fetches leads where: status='stalled' AND stalled_since > threshold + escalation_threshold
+// For now, we calculate this on the client since we don't have a stalled_since column yet.
+// In production, this would be a single SQL query on the server.
+// ---------------------------------------------------------------------------
+
+export async function getEscalatedStalls(
+  leadIds: string[],
+  stages: Array<{ stage: string; label: string; stall_threshold_hours: number }>,
+): Promise<AdminLeadRow[]> {
+  if (leadIds.length === 0) return []
+
+  const authDb = await createClient()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const dbr = authDb as any
+
+  // Fetch all leads
+  const { data: leadRows } = await dbr
+    .from('leads')
+    .select('id, reference_code, stage, status, student_id, consultant_id, created_at, updated_at, stalled_at')
+    .in('id', leadIds)
+
+  const leads = (leadRows ?? []) as Array<LeadRow & { stalled_at: string | null }>
+
+  // Filter to stalled leads
+  const stalledLeads = leads.filter(l => l.status === 'stalled' && l.stalled_at)
+
+  if (stalledLeads.length === 0) return []
+
+  // Find which are past escalation threshold
+  const now = new Date()
+  const stageThresholdMap = new Map(stages.map(s => [s.stage, s.stall_threshold_hours || 24]))
+
+  const escalatedLeadIds = stalledLeads
+    .filter(l => {
+      const stalledTime = new Date(l.stalled_at!)
+      const hoursSince = (now.getTime() - stalledTime.getTime()) / (1000 * 60 * 60)
+      const threshold = stageThresholdMap.get(l.stage) || 24
+      // Escalation threshold is threshold + 4 hours (for most stages)
+      const escalationThreshold = threshold + 4
+      return hoursSince > escalationThreshold
+    })
+    .map(l => l.id)
+
+  if (escalatedLeadIds.length === 0) return []
+
+  // Fetch full details for escalated leads
+  const { data: escalatedRows } = await dbr
+    .from('leads')
+    .select('id, reference_code, stage, status, student_id, consultant_id, created_at, updated_at')
+    .in('id', escalatedLeadIds)
+
+  const stageMap = new Map(stages.map(s => [s.stage, s.label]))
+
+  // Fetch all profiles
+  const escalatedLeads = (escalatedRows ?? []) as LeadRow[]
+  const allIds = [...new Set([
+    ...escalatedLeads.map(l => l.student_id),
+    ...escalatedLeads.filter(l => l.consultant_id).map(l => l.consultant_id as string),
+  ])]
+
+  const profileMap = new Map<string, ProfileRow>()
+  if (allIds.length > 0) {
+    const { data: profileRows } = await authDb
+      .from('profiles')
+      .select('id, full_name, email')
+      .in('id', allIds)
+    for (const p of ((profileRows ?? []) as ProfileRow[])) {
+      profileMap.set(p.id, p)
+    }
+  }
+
+  return escalatedLeads.map(l => {
+    const student = profileMap.get(l.student_id)
+    const consultant = l.consultant_id ? profileMap.get(l.consultant_id) : null
+    return {
+      id: l.id,
+      reference_code: l.reference_code,
+      stage: l.stage,
+      stage_label: stageMap.get(l.stage) ?? l.stage,
+      status: l.status,
+      created_at: l.created_at,
+      updated_at: l.updated_at,
+      student_id: l.student_id,
+      student_name: student?.full_name ?? student?.email ?? 'Unknown',
+      student_email: student?.email ?? '',
+      consultant_id: l.consultant_id ?? null,
+      consultant_name: consultant?.full_name ?? consultant?.email ?? null,
+    }
+  })
+}

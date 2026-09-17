@@ -1,0 +1,142 @@
+{
+  "buildCommand": "next build",
+  "installCommand": "pnpm install",
+  "devCommand": "next dev",
+  "framework": "nextjs",
+  "outputDirectory": ".next",
+  "env": {
+    "NEXT_PUBLIC_SUPABASE_URL": {
+      "description": "Supabase project URL",
+      "required": true
+    },
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY": {
+      "description": "Supabase public anon key for client-side operations",
+      "required": true
+    },
+    "SUPABASE_SERVICE_ROLE_KEY": {
+      "description": "Supabase service role key for server-side admin operations (keep secret)",
+      "required": true
+    },
+    "SUPABASE_URL": {
+      "description": "Supabase URL for edge functions (server-side)",
+      "required": true
+    },
+    "SUPABASE_SERVICE_RETON_KEY": {
+      "description": "Supabase service role key for edge functions (keep secret)",
+      "required": true
+    },
+    "TWILIO_ACCOUNT_SID": {
+      "description": "Twilio account SID for WhatsApp messaging",
+      "required": false
+    },
+    "TWILIO_AUTH_TOKEN": {
+      "description": "Twilio auth token (keep secret)",
+      "required": false
+    },
+    "TWILIO_PHONE_NUMBER": {
+      "description": "Twilio phone number for WhatsApp",
+      "required": false
+    },
+    "TWILIO_WHATSAPP_NUMBER": {
+      "description": "Twilio WhatsApp-enabled phone number",
+      "required": false
+    },
+    "TWILIO_WHATSAPP_TEMPLATE_SID": {
+      "description": "Twilio WhatsApp template SID for auto-responses",
+      "required": false
+    },
+    "RESEND_API_KEY": {
+      "description": "Resend API key for email delivery",
+      "required": false
+    },
+    "NEXT_PUBLIC_APP_URL": {
+      "description": "Public URL of this application (for email/SMS links)",
+      "required": true
+    },
+    "ROOT_DOMAIN": {
+      "description": "Root domain for the application (e.g., apexcrm.com)",
+      "required": false
+    },
+    "SUPABASE_WEBHOOK_SECRET": {
+      "description": "Secret for verifying database webhooks",
+      "required": false
+    },
+    "GITHUB_TOKEN": {
+      "description": "GitHub token for automated deployments in CI (keep secret)",
+      "required": false
+    }
+  },
+  "regions": ["iad1"],
+  "public": {
+    "NEXT_PUBLIC_SUPABASE_URL": true,
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY": true,
+    "NEXT_PUBLIC_APP_URL": true,
+    "ROOT_DOMAIN": true
+  },
+  "git": {
+    "deploymentEnabled": {
+      "main": true
+    }
+  },
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, no-store, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/api/health",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, public, max-age=10"
+        }
+      ]
+    },
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        },
+        {
+          "key": "X-XSS-Protection",
+          "value": "1; mode=block"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        },
+        {
+          "key": "Permissions-Policy",
+          "value": "geolocation=(), microphone=(), camera=()"
+        }
+      ]
+    }
+  ],
+  "redirects": [],
+  "rewrites": [
+    {
+      "source": "/robots.txt",
+      "destination": "/api/robots"
+    },
+    {
+      "source": "/sitemap.xml",
+      "destination": "/api/sitemap"
+    }
+  ],
+  "functions": {
+    "api/**.ts": {
+      "maxDuration": 30
+    }
+  }
+}

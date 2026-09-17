@@ -64,3 +64,21 @@ export type UploadState =
   | { status: 'success'; document: DocumentRow }
 
 export const INITIAL_UPLOAD_STATE: UploadState = { status: 'idle' }
+
+// ---------------------------------------------------------------------------
+// Upload progress tracking (client-side, not persisted)
+// ---------------------------------------------------------------------------
+
+export interface UploadProgress {
+  isUploading: boolean
+  progress:    number       // 0-100
+  loaded:      number       // bytes
+  total:       number       // bytes
+}
+
+export const INITIAL_UPLOAD_PROGRESS: UploadProgress = {
+  isUploading: false,
+  progress:    0,
+  loaded:      0,
+  total:       0,
+}

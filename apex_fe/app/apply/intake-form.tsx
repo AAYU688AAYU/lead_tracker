@@ -1,10 +1,64 @@
 'use client'
 
-import { useActionState, useState } from 'react'
+import { useActionState, useState, useCallback, useRef } from 'react'
+import { parsePhoneNumber, isValidPhoneNumber, AsYouType } from 'libphonenumber-js'
 import { submitApplication, setPassword } from './actions'
 import { INITIAL_STATE, INITIAL_SET_PASSWORD_STATE } from './types'
 import type { ApplyFormState, SetPasswordState } from './types'
 import type { ProgramOption } from './page'
+
+// ---------------------------------------------------------------------------
+// Validation utilities
+// ---------------------------------------------------------------------------
+
+function validateEmailSync(value: string): boolean {
+  if (!value) return false
+  // RFC 5322 simplified — good enough for client-side
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  return emailRegex.test(value)
+}
+
+function validatePhoneSync(value: string): boolean {
+  if (!value) return false
+  // Use libphonenumber-js to validate — handles international formats
+  try {
+    return isValidPhoneNumber(value)
+  } catch {
+    // If parsing fails, fall back to digit count (at least 7)
+    const digits = value.replace(/\D/g, '')
+    return digits.length >= 7
+  }
+}
+
+/**
+ * Format phone number as user types — applies international formatting.
+ * Safely handles parsing errors by returning the original input.
+ */
+function formatPhoneAsYouType(input: string): string {
+  if (!input) return ''
+  try {
+    const formatter = new AsYouType()
+    return formatter.input(input) || input
+  } catch {
+    return input
+  }
+}
+
+// Debounce hook — reusable for any function
+function useDebounce<T extends (...args: any[]) => void>(
+  callback: T,
+  delay: number,
+): T {
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null)
+
+  return useCallback(
+    ((...args: any[]) => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current)
+      timeoutRef.current = setTimeout(() => callback(...args), delay)
+    }) as T,
+    [callback, delay],
+  )
+}
 
 // ---------------------------------------------------------------------------
 // Shared primitives
@@ -37,11 +91,11 @@ function Label({ htmlFor, children, required }: {
 const inputBase =
   'mt-1 block w-full rounded-[var(--radius-sm)] border border-[var(--border)] bg-white ' +
   'px-3 py-2 text-sm text-[var(--text)] placeholder-[var(--text-muted)] ' +
-  'focus:border-[var(--accent)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)] ' +
+  'focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)] ' +
   'disabled:opacity-50'
 
 const inputError =
-  'border-[var(--destructive)] focus:border-[var(--destructive)] focus:ring-[var(--destructive)]'
+  'border-[var(--destructive)] focus-visible:border-[var(--destructive)] focus-visible:ring-[var(--destructive)]'
 
 // ---------------------------------------------------------------------------
 // Set-password form (inline in confirmation panel)
@@ -73,7 +127,7 @@ function SetPasswordForm({ userId, email }: { userId: string; email: string }) {
             </p>
             <a
               href={loginHref}
-              className="mt-3 inline-block rounded-[var(--radius-sm)] bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white transition-colors hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-2"
+              className="mt-3 inline-block rounded-[var(--radius-sm)] bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white transition-colors hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2"
             >
               Sign in to your dashboard →
             </a>
@@ -146,7 +200,7 @@ function SetPasswordForm({ userId, email }: { userId: string; email: string }) {
         <button
           type="submit"
           disabled={pwPending}
-          className="w-full rounded-[var(--radius-sm)] bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-2 disabled:opacity-60 sm:w-auto"
+          className="w-full rounded-[var(--radius-sm)] bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 disabled:opacity-60 sm:w-auto"
         >
           {pwPending ? 'Saving…' : 'Set password →'}
         </button>
@@ -209,7 +263,7 @@ function ConfirmationPanel({
             type="button"
             onClick={handleCopy}
             aria-label="Copy reference code"
-            className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-white px-3 py-1.5 text-xs font-medium text-[var(--text-muted)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+            className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-white px-3 py-1.5 text-xs font-medium text-[var(--text-muted)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
           >
             {copied ? 'Copied!' : 'Copy'}
           </button>
@@ -217,6 +271,27 @@ function ConfirmationPanel({
         <p className="mt-2 text-xs text-[var(--text-muted)]">
           Save this code — you&apos;ll need it to track your application.
         </p>
+
+        {/* Direct link to status page with pre-filled reference code and email */}
+        <div className="mt-4 pt-4 border-t border-[var(--border)]">
+          <a
+            href={`/status?code=${encodeURIComponent(referenceCode)}&email=${encodeURIComponent(email)}`}
+            className="inline-flex items-center gap-2 rounded-[var(--radius-sm)] bg-[var(--accent)] px-3 py-2 text-xs font-medium text-white transition-colors hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2"
+          >
+            <svg
+              className="h-4 w-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              aria-hidden
+            >
+              <circle cx="12" cy="12" r="10" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l2.5 2.5" />
+            </svg>
+            Track application →
+          </a>
+        </div>
       </div>
 
       {/* What happens next */}
@@ -300,6 +375,55 @@ export function IntakeForm({ programs }: { programs: ProgramOption[] }) {
   const [programId, setProgramId] = useState('')
   const [notes,     setNotes]     = useState('')
 
+  // Client-side validation state — for real-time feedback on blur
+  const [clientErrors, setClientErrors] = useState<Record<string, boolean>>({})
+
+  // Debounced validation functions
+  const validateEmailDebounced = useDebounce((value: string) => {
+    setClientErrors(prev => ({
+      ...prev,
+      email: !validateEmailSync(value),
+    }))
+  }, 300)
+
+  const validatePhoneDebounced = useDebounce((value: string) => {
+    setClientErrors(prev => ({
+      ...prev,
+      phone: !validatePhoneSync(value),
+    }))
+  }, 300)
+
+  // Handle email blur — trigger debounced validation
+  const handleEmailBlur = useCallback(() => {
+    if (email.trim()) {
+      validateEmailDebounced(email)
+    } else {
+      setClientErrors(prev => ({ ...prev, email: false }))
+    }
+  }, [email, validateEmailDebounced])
+
+  // Handle phone blur — trigger debounced validation
+  const handlePhoneBlur = useCallback(() => {
+    if (phone.trim()) {
+      validatePhoneDebounced(phone)
+    } else {
+      setClientErrors(prev => ({ ...prev, phone: false }))
+    }
+  }, [phone, validatePhoneDebounced])
+
+  // Clear client errors when user starts typing (optimistic)
+  const handleEmailChange = (value: string) => {
+    setEmail(value)
+    setClientErrors(prev => ({ ...prev, email: false }))
+  }
+
+  const handlePhoneChange = (value: string) => {
+    // Apply auto-formatting as user types
+    const formatted = formatPhoneAsYouType(value)
+    setPhone(formatted)
+    setClientErrors(prev => ({ ...prev, phone: false }))
+  }
+
   const grouped = groupByUniversity(programs)
 
   // ── Success state ─────────────────────────────────────────────────────────
@@ -351,12 +475,26 @@ export function IntakeForm({ programs }: { programs: ProgramOption[] }) {
           <input
             id="email" name="email" type="email" autoComplete="email"
             required disabled={pending}
-            value={email} onChange={(e) => setEmail(e.target.value)}
-            aria-describedby={fe.email ? 'email_error' : undefined}
-            aria-invalid={!!fe.email}
-            className={[inputBase, fe.email ? inputError : ''].join(' ')}
+            value={email}
+            onChange={(e) => handleEmailChange(e.target.value)}
+            onBlur={handleEmailBlur}
+            aria-describedby={[
+              'email_hint',
+              clientErrors.email && !fe.email && 'email_client_error',
+              fe.email && 'email_error',
+            ].filter(Boolean).join(' ')}
+            aria-invalid={!!(fe.email || clientErrors.email)}
+            className={[inputBase, (fe.email || clientErrors.email) ? inputError : ''].join(' ')}
             placeholder="jane@example.com"
           />
+          <p id="email_hint" className="mt-1 text-xs text-[var(--text-muted)]">
+            We&apos;ll use this to send updates about your application
+          </p>
+          {clientErrors.email && !fe.email && (
+            <p id="email_client_error" role="alert" className="mt-1 text-sm text-[var(--stalled)]">
+              Please enter a valid email address
+            </p>
+          )}
           <span id="email_error"><FieldError messages={fe.email} /></span>
         </div>
 
@@ -366,15 +504,24 @@ export function IntakeForm({ programs }: { programs: ProgramOption[] }) {
           <input
             id="phone" name="phone" type="tel" autoComplete="tel"
             required disabled={pending}
-            value={phone} onChange={(e) => setPhone(e.target.value)}
-            aria-describedby={fe.phone ? 'phone_error' : 'phone_hint'}
-            aria-invalid={!!fe.phone}
-            className={[inputBase, fe.phone ? inputError : ''].join(' ')}
+            value={phone}
+            onChange={(e) => handlePhoneChange(e.target.value)}
+            onBlur={handlePhoneBlur}
+            aria-describedby={[
+              'phone_hint',
+              clientErrors.phone && !fe.phone && 'phone_client_error',
+              fe.phone && 'phone_error',
+            ].filter(Boolean).join(' ')}
+            aria-invalid={!!(fe.phone || clientErrors.phone)}
+            className={[inputBase, (fe.phone || clientErrors.phone) ? inputError : ''].join(' ')}
             placeholder="+1 555 000 0000"
           />
-          {!fe.phone && (
-            <p id="phone_hint" className="mt-1 text-xs text-[var(--text-muted)]">
-              International formats accepted, e.g. +44 7700 900000
+          <p id="phone_hint" className="mt-1 text-xs text-[var(--text-muted)]">
+            International formats accepted, e.g. +44 7700 900000
+          </p>
+          {clientErrors.phone && !fe.phone && (
+            <p id="phone_client_error" role="alert" className="mt-1 text-sm text-[var(--stalled)]">
+              Please enter a valid phone number
             </p>
           )}
           <span id="phone_error"><FieldError messages={fe.phone} /></span>
@@ -444,7 +591,7 @@ export function IntakeForm({ programs }: { programs: ProgramOption[] }) {
       <button
         type="submit"
         disabled={pending}
-        className="w-full rounded-[var(--radius-sm)] bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-white transition-colors hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-2 disabled:opacity-60 sm:w-auto"
+        className="w-full rounded-[var(--radius-sm)] bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-white transition-colors hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 disabled:opacity-60 sm:w-auto"
       >
         {pending ? 'Submitting…' : 'Submit application'}
       </button>

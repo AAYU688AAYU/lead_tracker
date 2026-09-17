@@ -90,7 +90,7 @@ function ConsultantCard({ consultant }: { consultant: ConsultantBrief | null }) 
 
         <a
           href={`mailto:${consultant.email}`}
-          className="flex items-center gap-1.5 text-sm text-[var(--accent)] underline-offset-2 hover:underline focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-1 rounded-[var(--radius-sm)]"
+          className="flex items-center gap-1.5 text-sm text-[var(--accent)] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-1 rounded-[var(--radius-sm)]"
           aria-label={`Email ${consultant.full_name}`}
         >
           <svg
@@ -112,7 +112,7 @@ function ConsultantCard({ consultant }: { consultant: ConsultantBrief | null }) 
         {consultant.phone && (
           <a
             href={`tel:${consultant.phone}`}
-            className="flex items-center gap-1.5 text-sm text-[var(--accent)] underline-offset-2 hover:underline focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-1 rounded-[var(--radius-sm)]"
+            className="flex items-center gap-1.5 text-sm text-[var(--accent)] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-1 rounded-[var(--radius-sm)]"
             aria-label={`Call ${consultant.full_name}`}
           >
             <svg
@@ -267,7 +267,7 @@ export function LeadRow({
         onClick={() => setOpen(o => !o)}
         aria-expanded={open}
         aria-controls={`lead-detail-${lead.id}`}
-        className="w-full px-5 py-4 text-left focus:outline-none focus:ring-2 focus:ring-inset focus:ring-[var(--accent)]"
+        className="w-full px-5 py-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--accent)]"
       >
         <div className="flex flex-wrap items-center justify-between gap-3">
           {/* Left: reference code + stage label */}

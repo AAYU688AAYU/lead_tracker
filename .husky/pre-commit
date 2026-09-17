@@ -1,0 +1,54 @@
+#!/bin/sh
+# Pre-commit hook: Prevent committing credentials and secrets
+
+set -e
+
+# Colors for output
+RED='\033[0;31m'
+YELLOW='\033[1;33m'
+GREEN='\033[0;32m'
+NC='\033[0m' # No Color
+
+echo "🔒 Running pre-commit security checks..."
+
+# Check 1: Prevent .env.local from being committed
+if git diff --cached --name-only | grep -E "\.env\.local$|\.env$"; then
+    echo -e "${RED}❌ Error: .env files cannot be committed${NC}"
+    echo "   Please ensure .env.local and .env are in .gitignore"
+    exit 1
+fi
+
+# Check 2: Detect potential secrets in staged files
+SECRET_PATTERNS=(
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ"  # JWT anon key pattern
+    "SUPABASE_SERVICE_ROLE_KEY=eyJ"      # JWT service role pattern
+    "RESEND_API_KEY=re_"                 # Resend API key pattern
+    "TWILIO_AUTH_TOKEN="                 # Twilio token
+    "password.*=.*[A-Za-z0-9!@#$%]"      # Password patterns
+    "api_key.*="                         # Generic API key
+    "secret.*="                          # Generic secret
+)
+
+FOUND_SECRETS=0
+
+for pattern in "${SECRET_PATTERNS[@]}"; do
+    if git diff --cached -S "$pattern" | grep -q "$pattern"; then
+        echo -e "${RED}⚠️  Warning: Potential secret detected matching pattern: $pattern${NC}"
+        FOUND_SECRETS=1
+    fi
+done
+
+# Check 3: Prevent credentials in .env.local.example
+if git diff --cached apex_fe/.env.local.example | grep -E "test\.student@|test\.admin@|TestPass|9560404197|jahanjolly"; then
+    echo -e "${RED}❌ Error: Credentials found in .env.local.example${NC}"
+    echo "   This file should only contain placeholders, not actual credentials"
+    exit 1
+fi
+
+if [ $FOUND_SECRETS -eq 1 ]; then
+    echo -e "${YELLOW}⚠️  Found potential secrets. Proceeding with caution...${NC}"
+    echo "   If these are false positives, you can bypass with: git commit --no-verify"
+fi
+
+echo -e "${GREEN}✅ Pre-commit checks passed${NC}"
+exit 0

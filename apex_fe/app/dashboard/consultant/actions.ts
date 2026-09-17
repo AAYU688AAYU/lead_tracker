@@ -43,11 +43,11 @@ export async function getConsultantLeads(consultantId: string): Promise<Consulta
 
   const { data: stageRows } = await svcDb
     .from('pipeline_stage_labels')
-    .select('stage, label, sort_order')
+    .select('stage, label, sort_order, stall_threshold_hours')
     .order('sort_order', { ascending: true })
 
-  const stages = ((stageRows ?? []) as StageRow[]).map(s => ({
-    stage: s.stage, label: s.label, sort_order: s.sort_order,
+  const stages = ((stageRows ?? []) as (StageRow & { stall_threshold_hours: number })[]).map(s => ({
+    stage: s.stage, label: s.label, sort_order: s.sort_order, stall_threshold_hours: s.stall_threshold_hours,
   })) satisfies StageStep[]
 
   // Unread notification count for the bell icon.
@@ -391,9 +391,9 @@ export async function getLeadCardData(leadId: string): Promise<ConsultantLeadDet
   // Stage labels
   const { data: stageRows } = await svcDb
     .from('pipeline_stage_labels')
-    .select('stage, label, sort_order')
+    .select('stage, label, sort_order, stall_threshold_hours')
     .order('sort_order', { ascending: true })
-  const stages   = (stageRows ?? []) as StageRow[]
+  const stages   = (stageRows ?? []) as (StageRow & { stall_threshold_hours: number })[]
   const stageMap = new Map(stages.map(s => [s.stage, s.label]))
 
   // Student profile

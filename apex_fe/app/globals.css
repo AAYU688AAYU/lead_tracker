@@ -62,3 +62,39 @@ body {
   transition-duration: var(--duration);
   transition-timing-function: var(--ease);
 }
+
+/* ─── Accessibility utilities ─────────────────────────────────────────────── */
+
+/* Screen reader only: hide visually but keep in DOM for a11y announcements */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* Skip to main content link: hidden by default, visible on focus */
+.skip-link {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 50;
+  padding: 0.5rem 1rem;
+  background-color: var(--accent);
+  color: white;
+  text-decoration: none;
+  font-weight: 500;
+  border-radius: var(--radius-md);
+  transform: translateY(-100%);
+  transition: transform 140ms ease;
+}
+
+.skip-link:focus-visible {
+  transform: translateY(0);
+  outline: none;
+}

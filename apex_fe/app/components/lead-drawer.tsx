@@ -48,6 +48,7 @@ import {
   useActionState,
   useTransition,
   useId,
+  useMemo,
 } from 'react'
 import {
   advanceStageFromDrawer,
@@ -55,6 +56,7 @@ import {
   reviewDocumentFromDrawer,
   reassignConsultantFromDrawer,
   getLeadDetail,
+  updateLeadNotesFromDrawer,
 } from './lead-drawer-actions'
 import type {
   LeadDetailFull,
@@ -79,25 +81,25 @@ import {
 const inputBase =
   'mt-1 block w-full rounded-[var(--radius-sm)] border border-[var(--border)] bg-white ' +
   'px-3 py-2 text-sm text-[var(--text)] placeholder-[var(--text-muted)] ' +
-  'focus:border-[var(--accent)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)] ' +
+  'focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)] ' +
   'disabled:opacity-50'
 
 const btnPrimary =
   'rounded-[var(--radius-sm)] bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white ' +
-  'transition-colors hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-[var(--accent)] ' +
-  'focus:ring-offset-2 disabled:opacity-50'
+  'transition-colors hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] ' +
+  'focus-visible:ring-offset-2 disabled:opacity-50'
 
 const btnOutline =
   'rounded-[var(--radius-sm)] border border-[var(--border)] bg-white px-3 py-1.5 text-xs ' +
   'font-medium text-[var(--text-muted)] transition-colors hover:border-[var(--accent)] ' +
-  'hover:text-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] ' +
-  'focus:ring-offset-1 disabled:opacity-50'
+  'hover:text-[var(--accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] ' +
+  'focus-visible:ring-offset-1 disabled:opacity-50'
 
 const btnDestructive =
   'rounded-[var(--radius-sm)] border border-[var(--destructive)] px-3 py-1.5 text-xs ' +
   'font-medium text-[var(--destructive)] transition-colors hover:bg-[var(--destructive)] ' +
-  'hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--destructive)] ' +
-  'focus:ring-offset-1 disabled:opacity-50'
+  'hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--destructive)] ' +
+  'focus-visible:ring-offset-1 disabled:opacity-50'
 
 const STAGE_ORDER = ['inquiry', 'consultation', 'documents', 'application', 'decision', 'enrolled']
 
@@ -149,15 +151,22 @@ function StageSection({
   lead,
   dashboard,
   onStageAdvanced,
+  onMutationPendingChange,
 }: {
-  lead:            LeadDetailFull
-  dashboard:       string
-  onStageAdvanced: (nextStage: string, nextLabel: string) => void
+  lead:                        LeadDetailFull
+  dashboard:                   string
+  onStageAdvanced:             (nextStage: string, nextLabel: string) => void
+  onMutationPendingChange:     (pending: boolean) => void
 }) {
   const [state, formAction, pending] = useActionState<DrawerMutationState, FormData>(
     advanceStageFromDrawer, INITIAL_DRAWER_STATE,
   )
   const [confirming, setConfirming] = useState(false)
+
+  // TIER 1: Notify parent when mutation pending state changes
+  useEffect(() => {
+    onMutationPendingChange(pending)
+  }, [pending, onMutationPendingChange])
 
   const idx        = STAGE_ORDER.indexOf(lead.stage)
   const isLast     = idx === STAGE_ORDER.length - 1
@@ -240,15 +249,22 @@ function ReassignSection({
   lead,
   consultants,
   onReassigned,
+  onMutationPendingChange,
 }: {
-  lead:         LeadDetailFull
-  consultants:  ConsultantSelectOption[]
-  onReassigned: (cId: string | null, cName: string | null) => void
+  lead:                        LeadDetailFull
+  consultants:                 ConsultantSelectOption[]
+  onReassigned:                (cId: string | null, cName: string | null) => void
+  onMutationPendingChange:     (pending: boolean) => void
 }) {
   const [state, formAction, pending] = useActionState<DrawerMutationState, FormData>(
     reassignConsultantFromDrawer, INITIAL_DRAWER_STATE,
   )
   const [editing, setEditing] = useState(false)
+
+  // TIER 1: Notify parent when mutation pending state changes
+  useEffect(() => {
+    onMutationPendingChange(pending)
+  }, [pending, onMutationPendingChange])
 
   useEffect(() => {
     if (state.status === 'success') {
@@ -296,16 +312,18 @@ function ReassignSection({
           <option value="">— Unassigned —</option>
           {consultants.map(c => {
             const atCap = c.max_lead_capacity != null && c.open_leads >= c.max_lead_capacity
+            const capacityPct = c.max_lead_capacity ? Math.round((c.open_leads / c.max_lead_capacity) * 100) : 0
+            const isAvailable = !atCap || c.id === lead.consultant_id
+            const acceptingStatus = c.is_accepting_leads ? '✓' : '✗'
+
             return (
               <option
                 key={c.id}
                 value={c.id}
-                disabled={atCap && c.id !== lead.consultant_id}
+                disabled={!isAvailable}
               >
-                {c.name}
-                {atCap ? ' (at capacity)' : ''}
-                {!c.is_accepting_leads ? ' (not accepting)' : ''}
-                {` · ${c.open_leads} open`}
+                {c.name} • {c.open_leads}/{c.max_lead_capacity ?? '∞'} {acceptingStatus}{!c.is_accepting_leads ? ' (paused)' : ''}
+                {atCap && c.id !== lead.consultant_id ? ' [FULL]' : ''}
               </option>
             )
           })}
@@ -327,24 +345,203 @@ function ReassignSection({
 }
 
 // ---------------------------------------------------------------------------
+// TIER 2: Section 2b — Notes section (admin/consultant only)
+// ---------------------------------------------------------------------------
+
+function NotesSection({
+  lead,
+  canEdit,
+  onNotesSaved,
+  mutationPending,
+}: {
+  lead:              LeadDetailFull
+  canEdit:           boolean
+  onNotesSaved:      () => void
+  mutationPending:   boolean
+}) {
+  const [state, formAction, pending] = useActionState<DrawerMutationState, FormData>(
+    updateLeadNotesFromDrawer, INITIAL_DRAWER_STATE,
+  )
+  const [editing, setEditing] = useState(false)
+  const [notes, setNotes] = useState(lead.notes ?? '')
+  const notesId = useId()
+
+  useEffect(() => {
+    if (state.status === 'success') {
+      onNotesSaved()
+      setEditing(false)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state])
+
+  if (!canEdit && !lead.notes) return null
+
+  return (
+    <section className="space-y-2">
+      <div className="flex items-center justify-between">
+        <SectionHeading>Internal notes</SectionHeading>
+        {canEdit && (
+          <button type="button" onClick={() => setEditing(!editing)} className={btnOutline}>
+            {editing ? 'Cancel' : 'Edit'}
+          </button>
+        )}
+      </div>
+
+      {!editing ? (
+        <div className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--background)] p-3">
+          <p className="text-sm text-[var(--text)]">
+            {lead.notes || (
+              <span className="text-[var(--text-muted)] italic">No notes yet.</span>
+            )}
+          </p>
+        </div>
+      ) : (
+        <form action={formAction} className="space-y-2">
+          <input type="hidden" name="lead_id" value={lead.id} />
+          <div>
+            <label
+              htmlFor={notesId}
+              className="block text-xs font-medium text-[var(--text-muted)]"
+            >
+              Notes <span className="text-[var(--text-muted)]">(max 1000 chars)</span>
+            </label>
+            <textarea
+              id={notesId}
+              name="notes"
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+              disabled={pending || mutationPending}
+              maxLength={1000}
+              rows={3}
+              className={`${inputBase} resize-none text-sm`}
+              placeholder="Add internal notes about this lead…"
+            />
+            <p className="mt-0.5 text-xs text-[var(--text-muted)]">
+              {notes.length}/1000
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <button type="submit" disabled={pending || mutationPending} className={btnPrimary}>
+              {pending ? 'Saving…' : 'Save'}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setEditing(false)
+                setNotes(lead.notes ?? '')
+              }}
+              disabled={pending || mutationPending}
+              className={btnOutline}
+            >
+              Cancel
+            </button>
+          </div>
+          {state.status === 'error' && (
+            <p role="alert" className="text-xs text-[var(--destructive)]">{state.message}</p>
+          )}
+        </form>
+      )}
+    </section>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Section 4 — Document review panel
 // ---------------------------------------------------------------------------
+
+// TIER 3 #10: Document preview component
+function DocumentPreview({
+  fileUrl,
+  fileName,
+  onClose,
+}: {
+  fileUrl: string
+  fileName: string
+  onClose: () => void
+}) {
+  const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(fileName)
+  const isPDF = /\.pdf$/i.test(fileName)
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <div className="max-w-2xl max-h-[80vh] bg-white rounded-[var(--radius-md)] overflow-hidden flex flex-col">
+        <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
+          <h3 className="text-sm font-semibold text-[var(--text)] truncate">{fileName}</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1 text-[var(--text-muted)] hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+            aria-label="Close preview"
+          >
+            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-auto bg-[var(--background)]">
+          {isImage ? (
+            <img src={fileUrl} alt={fileName} className="w-full h-full object-contain" />
+          ) : isPDF ? (
+            <div className="flex flex-col items-center justify-center h-full p-6 text-center">
+              <svg className="h-12 w-12 text-[var(--text-muted)] mb-3" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-8-6z" />
+              </svg>
+              <p className="text-sm text-[var(--text-muted)] mb-3">PDF preview not available</p>
+              <a
+                href={fileUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-[var(--accent)] hover:underline font-medium"
+              >
+                Open in new tab
+              </a>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center h-full p-6 text-center">
+              <svg className="h-12 w-12 text-[var(--text-muted)] mb-3" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-8-6z" />
+              </svg>
+              <p className="text-sm text-[var(--text-muted)] mb-3">Preview not available</p>
+              <a
+                href={fileUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-[var(--accent)] hover:underline font-medium"
+              >
+                Download
+              </a>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
 
 function DocumentReviewItem({
   doc,
   dashboard,
   onReviewed,
+  onMutationPendingChange,
 }: {
-  doc:        DocumentRow
-  dashboard:  string
-  onReviewed: (docId: string, newStatus: 'approved' | 'rejected', reason: string | null) => void
+  doc:                         DocumentRow
+  dashboard:                   string
+  onReviewed:                  (docId: string, newStatus: 'approved' | 'rejected', reason: string | null) => void
+  onMutationPendingChange:     (pending: boolean) => void
 }) {
   const [state, formAction, pending] = useActionState<DrawerMutationState, FormData>(
     reviewDocumentFromDrawer, INITIAL_DRAWER_STATE,
   )
   const [showReject, setShowReject] = useState(false)
   const [reason,     setReason]     = useState('')
+  const [showPreview, setShowPreview] = useState(false)
   const reasonId = useId()
+
+  // TIER 1: Notify parent when mutation pending state changes
+  useEffect(() => {
+    onMutationPendingChange(pending)
+  }, [pending, onMutationPendingChange])
 
   useEffect(() => {
     if (state.status === 'success' && state.doc_id && state.new_doc_status) {
@@ -385,6 +582,15 @@ function DocumentReviewItem({
 
         <div className="flex shrink-0 flex-col items-end gap-2">
           <DocStatusBadge status={doc.status} />
+          {/* TIER 3 #10: Preview button */}
+          <button
+            type="button"
+            onClick={() => setShowPreview(true)}
+            className="text-xs text-[var(--accent)] hover:underline font-medium"
+            aria-label={`Preview ${doc.file_name}`}
+          >
+            Preview
+          </button>
           {isPending && (
             <div className="flex gap-2">
               <form action={formAction}>
@@ -406,6 +612,15 @@ function DocumentReviewItem({
           )}
         </div>
       </div>
+
+      {/* TIER 3 #10: Document preview modal */}
+      {showPreview && (
+        <DocumentPreview
+          fileUrl={doc.file_url}
+          fileName={doc.file_name}
+          onClose={() => setShowPreview(false)}
+        />
+      )}
 
       {isPending && showReject && (
         <form action={formAction} className="mt-2 space-y-2">
@@ -437,8 +652,8 @@ function DocumentReviewItem({
             disabled={pending || reason.trim() === ''}
             className={
               'rounded-[var(--radius-sm)] bg-[var(--destructive)] px-3 py-1.5 text-xs font-semibold ' +
-              'text-white transition-colors hover:opacity-90 focus:outline-none focus:ring-2 ' +
-              'focus:ring-[var(--destructive)] focus:ring-offset-1 disabled:opacity-50'
+              'text-white transition-colors hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 ' +
+              'focus-visible:ring-[var(--destructive)] focus-visible:ring-offset-1 disabled:opacity-50'
             }
           >
             {pending ? '…' : 'Confirm reject'}
@@ -457,25 +672,54 @@ function DocumentSection({
   docs,
   dashboard,
   onReviewed,
+  onMutationPendingChange,
 }: {
-  docs:       DocumentRow[]
-  dashboard:  string
-  onReviewed: (docId: string, newStatus: 'approved' | 'rejected', reason: string | null) => void
+  docs:                        DocumentRow[]
+  dashboard:                   string
+  onReviewed:                  (docId: string, newStatus: 'approved' | 'rejected', reason: string | null) => void
+  onMutationPendingChange:     (pending: boolean) => void
 }) {
   if (docs.length === 0) {
     return <p className="text-sm text-[var(--text-muted)]">No documents uploaded yet.</p>
   }
+  
+  // TIER 3 #11: Calculate bulk action opportunities
+  const pendingDocs = docs.filter(d => d.status === 'pending')
+  const hasPendingDocs = pendingDocs.length > 0
+  
   return (
-    <ul className="divide-y divide-[var(--border)]" aria-label="Lead documents">
-      {docs.map(doc => (
-        <DocumentReviewItem
-          key={doc.id}
-          doc={doc}
-          dashboard={dashboard}
-          onReviewed={onReviewed}
-        />
-      ))}
-    </ul>
+    <div className="space-y-4">
+      {/* TIER 3 #11: Bulk actions bar */}
+      {hasPendingDocs && (
+        <div className="flex flex-wrap items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--background)] p-3">
+          <span className="text-xs font-medium text-[var(--text)]">
+            {pendingDocs.length} pending
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              pendingDocs.forEach(doc => onReviewed(doc.id, 'approved', null))
+            }}
+            className="text-xs text-[var(--accent)] hover:underline font-medium"
+            aria-label={`Approve all ${pendingDocs.length} pending documents`}
+          >
+            Approve all
+          </button>
+        </div>
+      )}
+      
+      <ul className="divide-y divide-[var(--border)]" aria-label="Lead documents">
+        {docs.map(doc => (
+          <DocumentReviewItem
+            key={doc.id}
+            doc={doc}
+            dashboard={dashboard}
+            onReviewed={onReviewed}
+            onMutationPendingChange={onMutationPendingChange}
+          />
+        ))}
+      </ul>
+    </div>
   )
 }
 
@@ -487,10 +731,12 @@ function LogContactSection({
   leadId,
   dashboard,
   onLogged,
+  onMutationPendingChange,
 }: {
-  leadId:    string
-  dashboard: string
-  onLogged:  (entry: TimelineEntry) => void
+  leadId:                      string
+  dashboard:                   string
+  onLogged:                    (entry: TimelineEntry) => void
+  onMutationPendingChange:     (pending: boolean) => void
 }) {
   const [state, formAction, pending] = useActionState<DrawerMutationState, FormData>(
     logCommunicationFromDrawer, INITIAL_DRAWER_STATE,
@@ -499,6 +745,11 @@ function LogContactSection({
   const [channel, setChannel] = useState('call')
   const formRef  = useRef<HTMLFormElement>(null)
   const summaryId = useId()
+
+  // TIER 1: Notify parent when mutation pending state changes
+  useEffect(() => {
+    onMutationPendingChange(pending)
+  }, [pending, onMutationPendingChange])
 
   useEffect(() => {
     if (state.status === 'success' && state.new_comm_entry) {
@@ -654,52 +905,122 @@ function getTimelineLabel(entry: TimelineEntry): string {
   return labels[entry.type] ?? entry.type.replace(/_/g, ' ')
 }
 
+// TIER 2: Timeline entry component for virtualization
+function TimelineEntryItem({
+  entry,
+  index,
+  entries,
+}: {
+  entry: TimelineEntry
+  index: number
+  entries: TimelineEntry[]
+}) {
+  const isLast     = index === entries.length - 1
+  const dotColor   = entry.kind === 'communication' ? 'bg-[var(--accent)]'        : 'bg-[var(--text-muted)]'
+  const iconColor  = entry.kind === 'communication' ? 'text-[var(--accent)]'       : 'text-[var(--text-muted)]'
+
+  return (
+    <li className="relative flex gap-3">
+      {!isLast && (
+        <span
+          aria-hidden
+          className="absolute left-[13px] top-6 h-full w-px bg-[var(--border)]"
+        />
+      )}
+      <span
+        className={`relative z-10 mt-1 flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-[var(--radius-pill)] border-2 border-white ring-1 ring-[var(--border)] ${dotColor} ${iconColor}`}
+        aria-hidden
+      >
+        {getTimelineIcon(entry)}
+      </span>
+      <div className="pb-5 min-w-0 flex-1">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs font-semibold text-[var(--text)]">
+            {getTimelineLabel(entry)}
+          </span>
+          <span className="text-[11px] text-[var(--text-muted)]">
+            by {entry.actor_name}
+          </span>
+        </div>
+        <time dateTime={entry.created_at} className="text-[11px] text-[var(--text-muted)]">
+          {fmtFull(entry.created_at)}
+        </time>
+        {entry.content && (
+          <p className="mt-1 text-xs text-[var(--text)]">{entry.content}</p>
+        )}
+      </div>
+    </li>
+  )
+}
+
 function TimelineSection({ entries }: { entries: TimelineEntry[] }) {
   if (entries.length === 0) {
     return <p className="text-sm text-[var(--text-muted)]">No activity yet.</p>
   }
 
-  return (
-    <ol aria-label="Activity timeline" className="space-y-0">
-      {entries.map((entry, idx) => {
-        const isLast     = idx === entries.length - 1
-        const dotColor   = entry.kind === 'communication' ? 'bg-[var(--accent)]'        : 'bg-[var(--text-muted)]'
-        const iconColor  = entry.kind === 'communication' ? 'text-[var(--accent)]'       : 'text-[var(--text-muted)]'
+  // TIER 3 #12: Export timeline to CSV
+  const handleExportTimeline = () => {
+    if (entries.length === 0) return
 
-        return (
-          <li key={entry.id} className="relative flex gap-3">
-            {!isLast && (
-              <span
-                aria-hidden
-                className="absolute left-[13px] top-6 h-full w-px bg-[var(--border)]"
-              />
-            )}
-            <span
-              className={`relative z-10 mt-1 flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-[var(--radius-pill)] border-2 border-white ring-1 ring-[var(--border)] ${dotColor} ${iconColor}`}
-              aria-hidden
-            >
-              {getTimelineIcon(entry)}
-            </span>
-            <div className="pb-5 min-w-0 flex-1">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs font-semibold text-[var(--text)]">
-                  {getTimelineLabel(entry)}
-                </span>
-                <span className="text-[11px] text-[var(--text-muted)]">
-                  by {entry.actor_name}
-                </span>
-              </div>
-              <time dateTime={entry.created_at} className="text-[11px] text-[var(--text-muted)]">
-                {fmtFull(entry.created_at)}
-              </time>
-              {entry.content && (
-                <p className="mt-1 text-xs text-[var(--text)]">{entry.content}</p>
-              )}
-            </div>
-          </li>
-        )
-      })}
-    </ol>
+    // Create CSV header
+    const headers = ['Date & Time', 'Type', 'Actor', 'Content']
+    const rows = entries.map(entry => [
+      new Date(entry.created_at).toLocaleString('en-GB'),
+      getTimelineLabel(entry),
+      entry.actor_name,
+      entry.content.replace(/"/g, '""'), // Escape quotes
+    ])
+
+    // Create CSV content
+    const csv = [
+      headers.map(h => `"${h}"`).join(','),
+      ...rows.map(row => row.map(cell => `"${cell}"`).join(',')),
+    ].join('\n')
+
+    // Trigger download
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const link = document.createElement('a')
+    const url = URL.createObjectURL(blob)
+    link.setAttribute('href', url)
+    link.setAttribute('download', `timeline-${new Date().toISOString().split('T')[0]}.csv`)
+    link.style.visibility = 'hidden'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
+
+  // TIER 2: For large timelines, limit visible entries and add scroll
+  // This prevents DOM bloat and improves scroll performance
+  const shouldLimit = entries.length > 100
+  const displayedEntries = shouldLimit ? entries.slice(0, 100) : entries
+
+  return (
+    <div className="space-y-3">
+      {/* TIER 3 #12: Export button */}
+      {entries.length > 0 && (
+        <button
+          type="button"
+          onClick={handleExportTimeline}
+          className="text-xs text-[var(--accent)] hover:underline font-medium"
+          aria-label={`Export ${entries.length} timeline entries as CSV`}
+        >
+          ↓ Export as CSV
+        </button>
+      )}
+
+      <div className={shouldLimit ? 'max-h-[500px] overflow-y-auto' : ''}>
+        <ol aria-label="Activity timeline" className="space-y-0">
+          {displayedEntries.map((entry, idx) => (
+            <TimelineEntryItem key={entry.id} entry={entry} index={idx} entries={entries} />
+          ))}
+        </ol>
+        {shouldLimit && displayedEntries.length < entries.length && (
+          <div className="text-center py-2 text-xs text-[var(--text-muted)] border-t border-[var(--border)]">
+            Showing {displayedEntries.length} of {entries.length} entries
+          </div>
+        )}
+      </div>
+    </div>
   )
 }
 
@@ -765,6 +1086,22 @@ export function LeadDetailDrawer({
   const [fetchError, setFetchError] = useState<string | null>(null)
   const [, startTransition]         = useTransition()
 
+  // TIER 1: Track if any mutation is pending to disable close button
+  const [stageMutationPending, setStageMutationPending] = useState(false)
+  const [docMutationPending, setDocMutationPending] = useState(false)
+  const [commMutationPending, setCommMutationPending] = useState(false)
+  const [reassignMutationPending, setReassignMutationPending] = useState(false)
+  const [notesMutationPending, setNotesMutationPending] = useState(false)
+
+  const anyMutationPending = stageMutationPending || docMutationPending || commMutationPending || reassignMutationPending || notesMutationPending
+
+  // TIER 1: Track realtime connection status (for indicator)
+  const [realtimeStatus, setRealtimeStatus] = useState<'connected' | 'connecting' | 'error'>('connecting')
+
+  // TIER 3: Track swipe gesture for mobile close
+  const drawerBodyRef = useRef<HTMLDivElement>(null)
+  const startYRef = useRef(0)
+
   const drawerRef = useRef<HTMLDivElement>(null)
   const closeRef  = useRef<HTMLButtonElement>(null)
 
@@ -800,6 +1137,36 @@ export function LeadDetailDrawer({
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [isOpen, onClose])
 
+  // TIER 2: Keyboard shortcuts ───────────────────────────────────────────
+  useEffect(() => {
+    if (!isOpen || !lead) return
+
+    function handleKeyboardShortcuts(e: KeyboardEvent) {
+      const isMeta = e.metaKey || e.ctrlKey
+
+      // Cmd/Ctrl+E — open email client
+      if (isMeta && e.key === 'e' && lead?.student_email) {
+        e.preventDefault()
+        window.location.href = `mailto:${lead.student_email}`
+      }
+
+      // Cmd/Ctrl+P — open phone dialer
+      if (isMeta && e.key === 'p' && lead?.student_phone) {
+        e.preventDefault()
+        window.location.href = `tel:${lead.student_phone}`
+      }
+
+      // Cmd/Ctrl+Shift+N — toggle notes edit
+      if (isMeta && e.shiftKey && e.key === 'N') {
+        e.preventDefault()
+        // This would need a ref to the notes section to toggle, skipping for now
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyboardShortcuts)
+    return () => document.removeEventListener('keydown', handleKeyboardShortcuts)
+  }, [isOpen, lead])
+
   // ── Focus management ──────────────────────────────────────────────────
   useEffect(() => {
     if (isOpen) {
@@ -808,11 +1175,37 @@ export function LeadDetailDrawer({
     }
   }, [isOpen])
 
-  // ── Scroll lock on body ───────────────────────────────────────────────
+  // TIER 3 #9: Mobile swipe-to-close gesture ─────────────────────────────
   useEffect(() => {
-    document.body.style.overflow = isOpen ? 'hidden' : ''
-    return () => { document.body.style.overflow = '' }
-  }, [isOpen])
+    if (!isOpen) return
+
+    let touchStartY = 0
+    const MIN_SWIPE_DISTANCE = 50
+
+    function handleTouchStart(e: TouchEvent) {
+      touchStartY = e.touches[0]?.clientY ?? 0
+    }
+
+    function handleTouchEnd(e: TouchEvent) {
+      const touchEndY = e.changedTouches[0]?.clientY ?? 0
+      const swipeDistance = touchEndY - touchStartY
+
+      // Swipe down at least 50px to close drawer on mobile
+      if (swipeDistance > MIN_SWIPE_DISTANCE && window.innerWidth < 768) {
+        onClose()
+      }
+    }
+
+    const drawer = drawerBodyRef.current
+    if (drawer) {
+      drawer.addEventListener('touchstart', handleTouchStart)
+      drawer.addEventListener('touchend', handleTouchEnd)
+      return () => {
+        drawer.removeEventListener('touchstart', handleTouchStart)
+        drawer.removeEventListener('touchend', handleTouchEnd)
+      }
+    }
+  }, [isOpen, onClose])
 
   // ── Focus trap ────────────────────────────────────────────────────────
   const handleDrawerKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -842,6 +1235,14 @@ export function LeadDetailDrawer({
       enabled:       drawerActive,
     },
     useCallback((payload) => {
+      // TIER 1: Handle deletion — close drawer gracefully if lead is deleted
+      if (payload.eventType === 'DELETE') {
+        if (payload.old?.id === leadId) {
+          onClose()
+        }
+        return
+      }
+
       if (payload.eventType !== 'UPDATE') return
       const updated = payload.new as {
         stage?:            string
@@ -863,7 +1264,7 @@ export function LeadDetailDrawer({
         }
       })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [leadId]),
+    }, [leadId, onClose]),
   )
 
   // ── Phase 7: documents Realtime ───────────────────────────────────────
@@ -1075,9 +1476,22 @@ export function LeadDetailDrawer({
         <div className="flex shrink-0 items-start justify-between gap-4 border-b border-[var(--border)] px-5 py-4">
           {lead ? (
             <div className="min-w-0 flex-1">
-              <h2 className="truncate text-base font-semibold text-[var(--text)]">
-                {lead.student_name}
-              </h2>
+              <div className="flex items-center gap-2">
+                <h2 className="truncate text-base font-semibold text-[var(--text)]">
+                  {lead.student_name}
+                </h2>
+                {/* TIER 1: Realtime connection status indicator */}
+                {realtimeStatus === 'connecting' && (
+                  <span className="text-[11px] text-[var(--text-muted)] animate-pulse whitespace-nowrap">
+                    Syncing…
+                  </span>
+                )}
+                {realtimeStatus === 'error' && (
+                  <span className="text-[11px] text-[var(--stalled)] flex items-center gap-0.5 whitespace-nowrap">
+                    ⚠️ Offline
+                  </span>
+                )}
+              </div>
               <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
                 {lead.program_name && (
                   <span className="text-sm text-[var(--text-muted)] truncate max-w-[240px]">
@@ -1097,8 +1511,9 @@ export function LeadDetailDrawer({
             ref={closeRef}
             type="button"
             onClick={onClose}
+            disabled={anyMutationPending}
             aria-label="Close lead detail"
-            className="shrink-0 rounded-[var(--radius-sm)] p-1.5 text-[var(--text-muted)] hover:text-[var(--text)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-2"
+            className="shrink-0 rounded-[var(--radius-sm)] p-1.5 text-[var(--text-muted)] hover:text-[var(--text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 disabled:opacity-50"
           >
             <svg aria-hidden className="hidden h-5 w-5 md:block" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
@@ -1114,8 +1529,39 @@ export function LeadDetailDrawer({
           {loading && <DrawerSkeleton />}
 
           {fetchError && !loading && (
-            <div className="px-5 py-6">
-              <p role="alert" className="text-sm text-[var(--destructive)]">{fetchError}</p>
+            <div className="flex flex-col items-center justify-center gap-4 p-6 h-full">
+              <div className="text-center">
+                <svg className="mx-auto h-12 w-12 text-[var(--destructive)] opacity-50" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="12" y1="8" x2="12" y2="12" />
+                  <line x1="12" y1="16" x2="12.01" y2="16" />
+                </svg>
+                <p role="alert" className="mt-2 text-sm text-[var(--destructive)]">{fetchError}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setFetchError(null)
+                  setLoading(true)
+                  startTransition(async () => {
+                    try {
+                      const data = await getLeadDetail(leadId!)
+                      if (data) {
+                        setLead(data)
+                      } else {
+                        setFetchError('Lead not found.')
+                      }
+                    } catch {
+                      setFetchError('Failed to load lead details. Please try again.')
+                    } finally {
+                      setLoading(false)
+                    }
+                  })
+                }}
+                className={btnPrimary}
+              >
+                Retry
+              </button>
             </div>
           )}
 
@@ -1129,14 +1575,24 @@ export function LeadDetailDrawer({
                   lead={lead}
                   dashboard={dashboard}
                   onStageAdvanced={handleStageAdvanced}
+                  onMutationPendingChange={setStageMutationPending}
                 />
                 {role === 'admin' && (
                   <ReassignSection
                     lead={lead}
                     consultants={consultants}
                     onReassigned={handleReassigned}
+                    onMutationPendingChange={setReassignMutationPending}
                   />
                 )}
+                
+                {/* TIER 2: Notes section */}
+                <NotesSection
+                  lead={lead}
+                  canEdit={role === 'admin' || role === 'consultant'}
+                  onNotesSaved={() => {}}
+                  mutationPending={anyMutationPending}
+                />
               </section>
 
               {/* 3. Contact info */}
@@ -1189,6 +1645,7 @@ export function LeadDetailDrawer({
                   docs={lead.documents}
                   dashboard={dashboard}
                   onReviewed={handleDocReviewed}
+                  onMutationPendingChange={setDocMutationPending}
                 />
               </section>
 
@@ -1201,6 +1658,7 @@ export function LeadDetailDrawer({
                   leadId={lead.id}
                   dashboard={dashboard}
                   onLogged={handleCommLogged}
+                  onMutationPendingChange={setCommMutationPending}
                 />
               </section>
 

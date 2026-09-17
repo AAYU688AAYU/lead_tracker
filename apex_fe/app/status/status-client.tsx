@@ -13,7 +13,7 @@ import { LeadDetailPanel } from '@/app/components/lead-detail'
 const inputBase =
   'mt-1 block w-full rounded-[var(--radius-sm)] border border-[var(--border)] bg-white ' +
   'px-3 py-2 text-sm text-[var(--text)] placeholder-[var(--text-muted)] ' +
-  'focus:border-[var(--accent)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)] ' +
+  'focus-visible:border-[var(--accent)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)] ' +
   'disabled:opacity-50'
 
 function Label({
@@ -102,7 +102,7 @@ function LookupForm({
       <button
         type="submit"
         disabled={pending}
-        className="w-full rounded-[var(--radius-sm)] bg-[var(--accent)] px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-2 disabled:opacity-60 sm:w-auto"
+        className="w-full rounded-[var(--radius-sm)] bg-[var(--accent)] px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 disabled:opacity-60 sm:w-auto"
       >
         {pending ? 'Looking up…' : 'Look up application'}
       </button>
@@ -139,7 +139,7 @@ export function StatusClient() {
         <button
           type="button"
           onClick={() => window.location.replace('/status')}
-          className="text-sm text-[var(--accent)] underline-offset-2 hover:underline focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-2"
+          className="text-sm text-[var(--accent)] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2"
         >
           ← Look up a different application
         </button>

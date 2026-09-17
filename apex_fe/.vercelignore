@@ -1,0 +1,54 @@
+# Version control
+.git
+.gitignore
+.github
+
+# Node modules (installed fresh on Vercel)
+node_modules
+
+# Package manager artifacts
+pnpm-lock.yaml
+package-lock.json
+yarn.lock
+
+# Local development
+.env.local
+.env.*.local
+.next
+dist
+build
+
+# IDE and editor files
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Documentation
+README.md
+CHANGELOG.md
+*.md
+
+# Testing and linting
+__tests__
+.test.ts
+.spec.ts
+jest.config.js
+vitest.config.ts
+.eslintrc.json
+.eslintignore
+
+# CI/CD
+.github
+.gitlab-ci.yml
+.circleci
+.drone.yml
+appveyor.yml
+
+# Misc
+.turbo
+.cache
+coverage
+*.log

@@ -61,8 +61,8 @@ function FilterBar({
 
   const inputCls =
     'rounded-[var(--radius-sm)] border border-[var(--border)] bg-white px-2 py-1.5 ' +
-    'text-sm text-[var(--text)] focus:border-[var(--accent)] focus:outline-none ' +
-    'focus:ring-1 focus:ring-[var(--accent)]'
+    'text-sm text-[var(--text)] focus-visible:border-[var(--accent)] focus-visible:outline-none ' +
+    'focus-visible:ring-1 focus-visible:ring-[var(--accent)]'
 
   return (
     <div className="flex flex-wrap items-end gap-4">
