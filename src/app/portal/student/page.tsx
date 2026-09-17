@@ -10,14 +10,14 @@ export default function StudentPortalPage() {
   const { addLead } = useSupabaseRealtime();
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 p-4 sm:p-6 lg:p-8">
+    <div className="min-h-screen bg-slate-50 text-slate-900 p-4 sm:p-6 lg:p-8">
       <div className="max-w-4xl mx-auto space-y-6">
-        <div className="flex items-center justify-between pb-4 border-b border-slate-800">
+        <div className="flex items-center justify-between pb-4 border-b border-slate-200">
           <div>
-            <h1 className="text-2xl font-bold text-white">Student Placement & Advisory Portal</h1>
-            <p className="text-xs text-slate-400">Manage your university applications, academic portfolios, and offer letters</p>
+            <h1 className="text-2xl font-bold text-slate-900">Student Placement & Advisory Portal</h1>
+            <p className="text-xs text-slate-500">Manage your university applications, academic portfolios, and offer letters</p>
           </div>
-          <span className="text-xs font-mono text-emerald-400 bg-emerald-950/40 px-3 py-1 rounded-xl border border-emerald-500/30">
+          <span className="text-xs font-mono text-emerald-700 bg-emerald-50 px-3 py-1 rounded-xl border border-emerald-200 font-medium">
             Student Verified
           </span>
         </div>

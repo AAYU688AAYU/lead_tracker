@@ -32,7 +32,7 @@ export default function SplitDemoPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
+    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col">
       <DemoToolbar
         onSeed={seedLeads}
         onAgeLead={handleAgeLead}
@@ -41,21 +41,21 @@ export default function SplitDemoPage() {
 
       <div className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
         {/* Banner */}
-        <div className="p-4 rounded-2xl bg-gradient-to-r from-blue-950/40 via-indigo-950/30 to-slate-900 border border-blue-500/30 flex flex-wrap items-center justify-between gap-4">
+        <div className="p-4 rounded-2xl bg-blue-50 border border-blue-200 flex flex-wrap items-center justify-between gap-4 shadow-sm">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-blue-600/20 text-blue-400 flex items-center justify-center border border-blue-500/30 shrink-0">
+            <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-sm shrink-0">
               <Sparkles className="w-5 h-5" />
             </div>
             <div>
-              <h1 className="text-sm font-bold text-white">Section 13 Side-by-Side Presentation Mode</h1>
-              <p className="text-xs text-slate-300">
+              <h1 className="text-sm font-bold text-slate-900">Section 13 Side-by-Side Presentation Mode</h1>
+              <p className="text-xs text-slate-600">
                 Left: Student Form submission. Right: Live Consultant CRM with &lt;100ms sync &amp; audio alerts.
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2 text-xs font-mono text-blue-300 bg-blue-900/40 px-3 py-1 rounded-lg border border-blue-500/20">
+          <div className="flex items-center gap-2 text-xs font-mono text-blue-700 bg-white px-3 py-1.5 rounded-lg border border-blue-200 shadow-sm font-medium">
             <span>POST /public.leads</span>
-            <ArrowRight className="w-3.5 h-3.5 text-blue-400" />
+            <ArrowRight className="w-3.5 h-3.5 text-blue-600" />
             <span>WAL WebSocket Push</span>
           </div>
         </div>
@@ -73,7 +73,7 @@ export default function SplitDemoPage() {
               onLogCallForLead={(lead) => logContact(lead.id, 'PHONE', 'Advisory session recorded.')}
             />
             <FunnelChart leads={leads} />
-            <div className="bg-slate-900/50 rounded-2xl p-4 border border-slate-800">
+            <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm">
               <PipelineKanban
                 leads={leads}
                 onUpdateStage={updateStage}

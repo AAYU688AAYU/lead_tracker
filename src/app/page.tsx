@@ -23,7 +23,6 @@ import {
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<'split' | 'student' | 'crm' | 'admin'>('split');
-  const [selectedLeadForCall, setSelectedLeadForCall] = useState<Lead | null>(null);
 
   const {
     leads,
@@ -51,7 +50,7 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-950 text-slate-100">
+    <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900">
       {/* Top Navbar */}
       <Navbar
         activeTab={activeTab}
@@ -75,21 +74,21 @@ export default function Home() {
         {activeTab === 'split' && (
           <div className="space-y-6 animate-fadeIn">
             {/* Presentation Stage Explanation Banner */}
-            <div className="p-4 rounded-2xl bg-gradient-to-r from-blue-950/40 via-indigo-950/30 to-slate-900 border border-blue-500/30 flex flex-wrap items-center justify-between gap-4">
+            <div className="p-4 rounded-2xl bg-blue-50 border border-blue-200 flex flex-wrap items-center justify-between gap-4 shadow-sm">
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-blue-600/20 text-blue-400 flex items-center justify-center border border-blue-500/30 shrink-0">
+                <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-sm shrink-0">
                   <Sparkles className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-white">Section 13 Side-by-Side Presentation Mode</h3>
-                  <p className="text-xs text-slate-300">
+                  <h3 className="text-sm font-bold text-slate-900">Section 13 Side-by-Side Presentation Mode</h3>
+                  <p className="text-xs text-slate-600">
                     Left Panel captures B2C student inquiries. Right Panel receives instant &lt;100ms updates via Supabase Realtime without page refresh.
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-2 text-xs font-mono text-blue-300 bg-blue-900/40 px-3 py-1 rounded-lg border border-blue-500/20">
+              <div className="flex items-center gap-2 text-xs font-mono text-blue-700 bg-white px-3 py-1.5 rounded-lg border border-blue-200 shadow-sm font-medium">
                 <span>POST /public.leads</span>
-                <ArrowRight className="w-3.5 h-3.5 text-blue-400" />
+                <ArrowRight className="w-3.5 h-3.5 text-blue-600" />
                 <span>WAL WebSocket Push</span>
               </div>
             </div>
@@ -109,10 +108,10 @@ export default function Home() {
                   onLogCallForLead={handleResolveLeadCall}
                 />
                 <FunnelChart leads={leads} />
-                <div className="bg-slate-900/50 rounded-2xl p-4 border border-slate-800">
+                <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm">
                   <div className="flex items-center justify-between mb-3">
-                    <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">Live Pipeline Kanban Board</h4>
-                    <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-500/30">
+                    <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Live Pipeline Kanban Board</h4>
+                    <span className="text-[10px] font-mono text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 font-semibold">
                       Auto-sync active
                     </span>
                   </div>
@@ -132,12 +131,12 @@ export default function Home() {
         {/* =================================================================== */}
         {activeTab === 'student' && (
           <div className="max-w-4xl mx-auto space-y-6 animate-fadeIn">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-800">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-200">
               <div>
-                <h2 className="text-xl font-bold text-white">Student Placement & Advisory Portal</h2>
-                <p className="text-xs text-slate-400">Welcome, Aryan Verma • Target Destination: Canada</p>
+                <h2 className="text-xl font-bold text-slate-900">Student Placement & Advisory Portal</h2>
+                <p className="text-xs text-slate-500">Welcome, Aryan Verma • Target Destination: Canada</p>
               </div>
-              <span className="text-xs font-mono text-emerald-400 bg-emerald-950/40 px-3 py-1 rounded-xl border border-emerald-500/30">
+              <span className="text-xs font-mono text-emerald-700 bg-emerald-50 px-3 py-1 rounded-xl border border-emerald-200 font-medium">
                 Milestone 02: Counseling
               </span>
             </div>
@@ -153,20 +152,20 @@ export default function Home() {
         {/* =================================================================== */}
         {activeTab === 'crm' && (
           <div className="space-y-6 animate-fadeIn">
-            <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-800">
+            <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-200">
               <div>
-                <h2 className="text-xl font-bold text-white">Consultant Operations Desk</h2>
-                <p className="text-xs text-slate-400">Portfolio: Counselor Priya Sharma (New Delhi Branch) • 6-Stage Realtime Pipeline</p>
+                <h2 className="text-xl font-bold text-slate-900">Consultant Operations Desk</h2>
+                <p className="text-xs text-slate-500">Portfolio: Counselor Priya Sharma (New Delhi Branch) • 6-Stage Realtime Pipeline</p>
               </div>
 
               <div className="flex items-center gap-3">
-                <div className="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs">
-                  <span className="text-slate-400">Active Pipeline:</span>{' '}
-                  <strong className="text-white font-mono">{leads.length} Students</strong>
+                <div className="px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-xs shadow-sm">
+                  <span className="text-slate-500">Active Pipeline:</span>{' '}
+                  <strong className="text-slate-900 font-mono">{leads.length} Students</strong>
                 </div>
                 {stalledLeads.length > 0 && (
-                  <div className="px-3 py-1.5 rounded-xl bg-red-950/50 border border-red-500/50 text-xs text-red-300 flex items-center gap-1.5 font-semibold">
-                    <span className="w-2 h-2 rounded-full bg-red-400 animate-ping" />
+                  <div className="px-3 py-1.5 rounded-xl bg-red-50 border border-red-200 text-xs text-red-700 flex items-center gap-1.5 font-semibold">
+                    <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
                     <span>{stalledLeads.length} SLA Breaches</span>
                   </div>
                 )}
@@ -193,61 +192,61 @@ export default function Home() {
         {/* =================================================================== */}
         {activeTab === 'admin' && (
           <div className="space-y-6 animate-fadeIn">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-800">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-200">
               <div>
-                <h2 className="text-xl font-bold text-white">Agency Super-Admin Governance</h2>
-                <p className="text-xs text-slate-400">Executive Director: Dr. Alistair Finch • Global Institutional Oversight</p>
+                <h2 className="text-xl font-bold text-slate-900">Agency Super-Admin Governance</h2>
+                <p className="text-xs text-slate-500">Executive Director: Dr. Alistair Finch • Global Institutional Oversight</p>
               </div>
-              <span className="text-xs font-mono text-purple-400 bg-purple-950/40 px-3 py-1 rounded-xl border border-purple-500/30">
+              <span className="text-xs font-mono text-purple-700 bg-purple-50 px-3 py-1 rounded-xl border border-purple-200 font-medium">
                 Global Platform Oversight
               </span>
             </div>
 
             {/* Top Metric Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-4">
-                <div className="text-xs text-slate-400 font-medium">Total Registered Candidates</div>
-                <div className="text-2xl font-bold text-white font-mono mt-1">{leads.length}</div>
-                <div className="text-[11px] text-emerald-400 mt-1 flex items-center gap-1">
+              <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+                <div className="text-xs text-slate-500 font-medium">Total Registered Candidates</div>
+                <div className="text-2xl font-bold text-slate-900 font-mono mt-1">{leads.length}</div>
+                <div className="text-[11px] text-emerald-600 mt-1 flex items-center gap-1 font-medium">
                   <CheckCircle2 className="w-3 h-3" />
                   <span>+18% intake growth</span>
                 </div>
               </div>
 
-              <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-4">
-                <div className="text-xs text-slate-400 font-medium">Partner Universities</div>
-                <div className="text-2xl font-bold text-white font-mono mt-1">48 Institutions</div>
-                <div className="text-[11px] text-blue-400 mt-1">UK, Canada, Germany, Australia</div>
+              <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+                <div className="text-xs text-slate-500 font-medium">Partner Universities</div>
+                <div className="text-2xl font-bold text-slate-900 font-mono mt-1">48 Institutions</div>
+                <div className="text-[11px] text-blue-600 mt-1 font-medium">UK, Canada, Germany, Australia</div>
               </div>
 
-              <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-4">
-                <div className="text-xs text-slate-400 font-medium">Active SLA Inactivity Breaches</div>
-                <div className="text-2xl font-bold text-red-400 font-mono mt-1">{stalledLeads.length}</div>
-                <div className="text-[11px] text-red-300 mt-1">Monitored via pg_cron (every 1m)</div>
+              <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+                <div className="text-xs text-slate-500 font-medium">Active SLA Inactivity Breaches</div>
+                <div className="text-2xl font-bold text-red-600 font-mono mt-1">{stalledLeads.length}</div>
+                <div className="text-[11px] text-red-500 mt-1 font-medium">Monitored via pg_cron (every 1m)</div>
               </div>
 
-              <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-4">
-                <div className="text-xs text-slate-400 font-medium">Consultant Conversion Avg</div>
-                <div className="text-2xl font-bold text-emerald-400 font-mono mt-1">16.8%</div>
-                <div className="text-[11px] text-slate-400 mt-1">Target: &gt;15.0%</div>
+              <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+                <div className="text-xs text-slate-500 font-medium">Consultant Conversion Avg</div>
+                <div className="text-2xl font-bold text-emerald-600 font-mono mt-1">16.8%</div>
+                <div className="text-[11px] text-slate-500 mt-1">Target: &gt;15.0%</div>
               </div>
             </div>
 
             <FunnelChart leads={leads} />
 
             {/* Dynamic SLA Threshold Manager */}
-            <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+            <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                    <Sliders className="w-4 h-4 text-blue-400" />
+                  <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                    <Sliders className="w-4 h-4 text-blue-600" />
                     Dynamic Stage SLA Inactivity Thresholds (Work 4 Engine)
                   </h3>
-                  <p className="text-xs text-slate-400">
+                  <p className="text-xs text-slate-500">
                     Custom hours before pg_cron marks lead as stalled and pushes realtime alarm to counselor
                   </p>
                 </div>
-                <span className="text-xs font-mono text-blue-400 bg-blue-950/40 px-2.5 py-1 rounded-lg border border-blue-500/30">
+                <span className="text-xs font-mono text-blue-700 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-200 font-medium">
                   pg_cron schedule: * * * * *
                 </span>
               </div>
@@ -261,19 +260,19 @@ export default function Home() {
                   { stage: 'Fee/Verification', threshold: '24 Hours', severity: 'CRITICAL' },
                   { stage: 'Admitted', threshold: 'Infinite (Terminal)', severity: 'NONE' },
                 ].map((s) => (
-                  <div key={s.stage} className="p-3 bg-slate-950/60 border border-slate-800 rounded-xl flex items-center justify-between text-xs">
+                  <div key={s.stage} className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between text-xs">
                     <div>
-                      <div className="font-semibold text-white">{s.stage}</div>
-                      <div className="text-slate-400 font-mono text-[11px] mt-0.5">SLA: {s.threshold}</div>
+                      <div className="font-semibold text-slate-900">{s.stage}</div>
+                      <div className="text-slate-500 font-mono text-[11px] mt-0.5">SLA: {s.threshold}</div>
                     </div>
                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded font-mono ${
                       s.severity === 'CRITICAL'
-                        ? 'bg-red-950/60 text-red-400 border border-red-500/40'
+                        ? 'bg-red-50 text-red-700 border border-red-200'
                         : s.severity === 'HIGH'
-                        ? 'bg-amber-950/60 text-amber-400 border border-amber-500/40'
+                        ? 'bg-amber-50 text-amber-700 border border-amber-200'
                         : s.severity === 'MEDIUM'
-                        ? 'bg-blue-950/60 text-blue-400 border border-blue-500/40'
-                        : 'bg-slate-800 text-slate-400'
+                        ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                        : 'bg-slate-100 text-slate-600 border border-slate-200'
                     }`}>
                       {s.severity}
                     </span>
@@ -283,9 +282,9 @@ export default function Home() {
             </div>
 
             {/* University Institutional Contracts */}
-            <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <Building2 className="w-4 h-4 text-indigo-400" />
+            <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <Building2 className="w-4 h-4 text-blue-600" />
                 Partner Educational Institutions Directory
               </h3>
 
@@ -296,12 +295,12 @@ export default function Home() {
                   { name: 'University of Melbourne', country: 'Australia', tier: 'Direct Agreement', ranking: '#14 Global' },
                   { name: 'Technical University of Munich', country: 'Germany', tier: 'Preferred Partner', ranking: '#37 Global' },
                 ].map((u) => (
-                  <div key={u.name} className="p-3 bg-slate-950/60 border border-slate-800 rounded-xl flex items-center justify-between text-xs">
+                  <div key={u.name} className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between text-xs">
                     <div>
-                      <div className="font-semibold text-white">{u.name}</div>
-                      <div className="text-slate-400 text-[11px]">{u.country} • {u.ranking}</div>
+                      <div className="font-semibold text-slate-900">{u.name}</div>
+                      <div className="text-slate-500 text-[11px]">{u.country} • {u.ranking}</div>
                     </div>
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 font-medium">
                       {u.tier}
                     </span>
                   </div>
@@ -315,7 +314,7 @@ export default function Home() {
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-slate-800/80 bg-slate-950 py-4 text-center text-xs text-slate-500">
+      <footer className="border-t border-slate-200 bg-white py-4 text-center text-xs text-slate-500">
         <p>GlobalStudy B2B2C Educational Placement Agency CRM • Next.js 15 + Supabase Architecture</p>
       </footer>
     </div>
